@@ -1,0 +1,270 @@
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini RAG 整合介面</title>
+    <style>
+        :root {
+            --bg-color: #121212; --primary-text: #e0e0e0; --secondary-text: #b0b0b0;
+            --surface-color: #1e1e1e; --border-color: #333; --accent-color: #8257E5;
+            --accent-hover: #9466FF; --danger-color: #e53935; --danger-hover: #c62828;
+            --success-color: #4CAF50;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; background-color: var(--bg-color); color: var(--primary-text); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+        .header-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 20px; }
+        .controls-container { display: flex; align-items: center; gap: 25px; flex-wrap: wrap;}
+        .model-selector-container, .toggle-switch-container { display: flex; align-items: center; gap: 10px; }
+        #model-selector { padding: 8px; background-color: var(--surface-color); color: var(--primary-text); border: 1px solid var(--border-color); border-radius: 5px; font-size: 1em; }
+        #model-status, .toggle-status { font-size: 0.9em; color: var(--secondary-text); transition: color 0.3s; }
+        .toggle-switch-container label { cursor: pointer; }
+        
+        .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border-color); transition: .4s; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; }
+        input:checked + .slider { background-color: var(--success-color); }
+        input:focus + .slider { box-shadow: 0 0 1px var(--success-color); }
+        input:checked + .slider:before { transform: translateX(22px); }
+        .slider.round { border-radius: 28px; }
+        .slider.round:before { border-radius: 50%; }
+
+        /* Other styles are unchanged */
+        .tabs { display: flex; border-bottom: 2px solid var(--border-color); margin-bottom: 1.5rem; }
+        .tab-button { padding: 1rem 1.5rem; cursor: pointer; background: none; border: none; color: var(--secondary-text); font-size: 1rem; transition: all 0.2s; }
+        .tab-button.active { color: var(--accent-color); border-bottom: 2px solid var(--accent-color); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        #chat-container { display: flex; flex-direction: column; height: 75vh; background-color: var(--surface-color); border-radius: 8px; overflow: hidden; }
+        #chat-box { flex-grow: 1; padding: 1rem; overflow-y: auto; }
+        .message { margin-bottom: 1rem; display: flex; }
+        .message .content { max-width: 80%; padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.5; white-space: pre-wrap; }
+        .user-message { justify-content: flex-end; }
+        .user-message .content { background-color: var(--accent-color); color: white; border-bottom-right-radius: 2px; }
+        .bot-message .content { background-color: #363636; color: var(--primary-text); border-bottom-left-radius: 2px; }
+        #chat-form { display: flex; padding: 1rem; border-top: 1px solid var(--border-color); }
+        #chat-input { flex-grow: 1; padding: 0.75rem; border: 1px solid #444; border-radius: 5px; background-color: #2c2c2c; color: white; font-size: 1rem; resize: none; max-height: 150px; overflow-y: auto; }
+        #chat-submit { margin-left: 0.5rem; padding: 0.75rem 1.5rem; border: none; border-radius: 5px; background-color: var(--accent-color); color: white; cursor: pointer; align-self: flex-end; }
+        #chat-submit:hover { background-color: var(--accent-hover); }
+        #chat-submit:disabled { background-color: #555; cursor: not-allowed; }
+        .search-box { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 20px; background-color: #2c2c2c; color: #fff; border: 1px solid #444; border-radius: 5px; font-size: 16px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        th { background-color: #1f1f1f; }
+        td { word-break: break-word; white-space: pre-wrap; }
+        .delete-btn { background-color: var(--danger-color); color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+        .delete-btn:hover { background-color: var(--danger-hover); }
+        .loading { text-align: center; padding: 20px; font-size: 18px; }
+        .record-id { font-family: monospace; color: #888; font-size: 12px; }
+        .thinking-block { background-color: rgba(255, 255, 255, 0.05); border-left: 3px solid var(--accent-color); margin-bottom: 1rem; padding: 0.5rem 1rem; border-radius: 4px; }
+        .toggle-think { background: none; border: none; color: var(--secondary-text); cursor: pointer; padding: 0; font-size: 0.9em; text-decoration: underline; }
+        .thinking-content { display: none; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed var(--border-color); white-space: pre-wrap; color: #ccc; }
+        .thinking-content.visible { display: block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-container">
+            <h1>本地端LLM RAG 整合介面</h1>
+            <div class="controls-container">
+                <div class="toggle-switch-container">
+                    <label for="scraper-toggle">啟用網頁爬蟲</label>
+                    <label class="switch">
+                        <input type="checkbox" id="scraper-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                    <span id="scraper-status" class="toggle-status"></span>
+                </div>
+                <div class="toggle-switch-container">
+                    <label for="wikipedia-toggle">啟用維基百科</label>
+                    <label class="switch">
+                        <input type="checkbox" id="wikipedia-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                    <span id="wikipedia-status" class="toggle-status"></span>
+                </div>
+                <div class="toggle-switch-container">
+                    <label for="history-toggle">啟用歷史對話</label>
+                    <label class="switch">
+                        <input type="checkbox" id="history-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                    <span id="history-status" class="toggle-status"></span>
+                </div>
+                <div class="model-selector-container">
+                    <label for="model-selector">選取模型:</label>
+                    <select id="model-selector">
+                        <option value="">正在載入...</option>
+                    </select>
+                    <span id="model-status"></span>
+                </div>
+            </div>
+        </div>
+        <div class="tabs">
+            <button class="tab-button active" onclick="openTab(event, 'chat')">聊天</button>
+            <button class="tab-button" onclick="openTab(event, 'db-manager')">資料庫管理</button>
+        </div>
+
+        <div id="chat" class="tab-content active">
+            <div id="chat-container">
+                <div id="chat-box">
+                    <div class="message bot-message">
+                        <div class="content">你好！我是您的 RAG 助理。您可以從右上角選擇一個模型並設定功能來開始對話。</div>
+                    </div>
+                </div>
+                <div id="chat-form">
+                    <textarea id="chat-input" placeholder="在這裡輸入您的問題... (Shift+Enter 換行)" rows="1" onkeydown="handleEnter(event)"></textarea>
+                    <button type="button" id="chat-submit" onclick="sendMessage()">傳送</button>
+                </div>
+            </div>
+        </div>
+        <div id="db-manager" class="tab-content">
+            <input type="text" id="searchBox" class="search-box" placeholder="即時搜索對話內容...">
+            <p id="recordCount">總共有 0 筆紀錄</p>
+            <div id="loading" class="loading">正在載入資料...</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 20%;">ID</th>
+                        <th style="width: 60%;">內容 (預覽)</th>
+                        <th style="width: 10%;">來源</th>
+                        <th style="width: 10%;">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="recordTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        //Global Vars
+        let chatBox, chatInput, submitButton, modelSelector, modelStatus;
+        let historyToggle, historyStatus, wikipediaToggle, wikipediaStatus, scraperToggle, scraperStatus;
+
+        //Init Function
+        document.addEventListener('DOMContentLoaded', () => {
+            chatBox = document.getElementById('chat-box');
+            chatInput = document.getElementById('chat-input');
+            submitButton = document.getElementById('chat-submit');
+            modelSelector = document.getElementById('model-selector');
+            modelStatus = document.getElementById('model-status');
+            historyToggle = document.getElementById('history-toggle');
+            historyStatus = document.getElementById('history-status');
+            wikipediaToggle = document.getElementById('wikipedia-toggle');
+            wikipediaStatus = document.getElementById('wikipedia-status');
+            scraperToggle = document.getElementById('scraper-toggle');
+            scraperStatus = document.getElementById('scraper-status');          
+            loadModelsAndSettings();
+            historyToggle.addEventListener('change', handleHistoryToggle);
+            wikipediaToggle.addEventListener('change', handleWikipediaToggle);
+            scraperToggle.addEventListener('change', handleScraperToggle);
+
+            chatInput.addEventListener('input', () => {
+                chatInput.style.height = 'auto';
+                chatInput.style.height = (chatInput.scrollHeight) + 'px';
+            });
+        });
+
+        // JS Functions Start
+        async function loadModelsAndSettings() {
+            try {
+                const response = await fetch('/api/models');
+                if (!response.ok) throw new Error('無法獲取模型列表');
+                const data = await response.json();
+                
+                // Load Models
+                const models = data.models;
+                const currentModel = data.current_model;
+                modelSelector.innerHTML = '';
+                if (models.length === 0) {
+                    modelSelector.innerHTML = '<option>無可用模型</option>';
+                    modelSelector.disabled = true;
+                } else {
+                    models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model;
+                        option.textContent = model;
+                        if (model === currentModel) {
+                            option.selected = true;
+                            modelStatus.textContent = `當前: ${currentModel.split(':')[0]}`;
+                        }
+                        modelSelector.appendChild(option);
+                    });
+                    modelSelector.addEventListener('change', handleModelChange);
+                }
+
+                // Set initial state for all toggles
+                historyToggle.checked = data.history_enabled;
+                historyStatus.textContent = data.history_enabled ? '已啟用' : '已停用';
+                
+                wikipediaToggle.checked = data.wikipedia_enabled;
+                wikipediaStatus.textContent = data.wikipedia_enabled ? '已啟用' : '已停用';
+                
+                scraperToggle.checked = data.scraper_enabled;
+                scraperStatus.textContent = data.scraper_enabled ? '已啟用' : '已停用';
+
+            } catch (error) {
+                console.error('載入設定失敗:', error);
+                modelSelector.innerHTML = '<option>載入失敗</option>';
+                historyStatus.textContent = '狀態未知';
+                wikipediaStatus.textContent = '狀態未知';
+                scraperStatus.textContent = '狀態未知'; // <-- ADDED
+            }
+        }
+
+        async function handleScraperToggle(event) {
+            await handleToggleChange(event.target, scraperStatus, '/api/set_scraper', '網頁爬蟲');
+        }
+
+        async function handleWikipediaToggle(event) {
+            await handleToggleChange(event.target, wikipediaStatus, '/api/set_wikipedia', '維基百科搜尋');
+        }
+
+        async function handleHistoryToggle(event) {
+            await handleToggleChange(event.target, historyStatus, '/api/set_history', '歷史對話檢索');
+        }
+
+        async function handleToggleChange(toggleElement, statusElement, apiUrl, featureName) {
+            const isEnabled = toggleElement.checked;
+            statusElement.textContent = isEnabled ? '啟用中...' : '停用中...';
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: isEnabled })
+                });
+                if (!response.ok) throw new Error('伺服器切換失敗');
+                const result = await response.json();
+                if (result.success) {
+                    statusElement.textContent = isEnabled ? '已啟用 ✅' : '已停用 ❌';
+                    statusElement.style.color = isEnabled ? 'var(--success-color)' : 'var(--danger-color)';
+                } else {
+                    throw new Error(result.error || '未知錯誤');
+                }
+            } catch (error) {
+                console.error(`切換${featureName}失敗:`, error);
+                statusElement.textContent = `切換失敗!`;
+                statusElement.style.color = 'var(--danger-color)';
+                toggleElement.checked = !isEnabled;
+            }
+            setTimeout(() => {
+                 statusElement.textContent = toggleElement.checked ? '已啟用' : '已停用';
+                 statusElement.style.color = 'var(--secondary-text)';
+            }, 4000);
+        }
+
+        async function handleModelChange(event) { const selectedModel = event.target.value; modelStatus.textContent = `切換中...`; modelStatus.style.color = 'var(--secondary-text)'; try { const response = await fetch('/api/set_model', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: selectedModel }) }); if (!response.ok) throw new Error('伺服器切換模型失敗'); const result = await response.json(); if (result.success) { modelStatus.textContent = `當前: ${selectedModel.split(':')[0]} ✅`; modelStatus.style.color = 'var(--success-color)'; } else { throw new Error(result.error || '未知錯誤'); } } catch (error) { console.error('切換模型請求失敗:', error); modelStatus.textContent = `切換失敗`; modelStatus.style.color = 'var(--danger-color)'; } setTimeout(() => { modelStatus.textContent = `當前: ${modelSelector.value.split(':')[0]}`; modelStatus.style.color = 'var(--secondary-text)'; }, 4000); }
+        function openTab(evt, tabName) { let i, tabcontent, tablinks; tabcontent = document.getElementsByClassName("tab-content"); for (i = 0; i < tabcontent.length; i++) { tabcontent[i].style.display = "none"; } tablinks = document.getElementsByClassName("tab-button"); for (i = 0; i < tablinks.length; i++) { tablinks[i].className = tablinks[i].className.replace(" active", ""); } document.getElementById(tabName).style.display = "block"; evt.currentTarget.className += " active"; if (tabName === 'db-manager') { if (!window.dbManagerInitialized) { initDbManager(); window.dbManagerInitialized = true; } else { fetchRecords(); } } }
+        function appendMessage(text, sender) { const messageDiv = document.createElement('div'); messageDiv.className = `message ${sender}-message`; const contentDiv = document.createElement('div'); contentDiv.className = 'content'; contentDiv.textContent = text; messageDiv.appendChild(contentDiv); chatBox.appendChild(messageDiv); chatBox.scrollTop = chatBox.scrollHeight; return messageDiv; }
+        async function sendMessage() { const question = chatInput.value.trim(); if (!question) return; appendMessage(question, 'user'); chatInput.value = ''; chatInput.style.height = 'auto'; submitButton.disabled = true; const botMessageDiv = appendMessage('', 'bot'); const botContentDiv = botMessageDiv.querySelector('.content'); let fullBotResponse = ''; try { const eventSource = new EventSource(`/ask?question=${encodeURIComponent(question)}`); eventSource.onmessage = function(event) { if (event.data === '[DONE]') { eventSource.close(); submitButton.disabled = false; if (fullBotResponse.includes('<think>') && fullBotResponse.includes('</think>')) { let safeHtml = escapeHtml(fullBotResponse); const thinkBlockHtml = `<div class='thinking-block'><button class='toggle-think' onclick='toggleThink(this)'>顯示/隱藏思考過程</button><div class='thinking-content'>`; safeHtml = safeHtml.replace(/&lt;think&gt;/, thinkBlockHtml); safeHtml = safeHtml.replace(/&lt;\/think&gt;/, '</div></div>'); botContentDiv.innerHTML = safeHtml; } else { botContentDiv.textContent = fullBotResponse; } chatBox.scrollTop = chatBox.scrollHeight; return; } const data = JSON.parse(event.data); fullBotResponse += data.content; botContentDiv.textContent = fullBotResponse; chatBox.scrollTop = chatBox.scrollHeight; }; eventSource.onerror = function(err) { console.error("EventSource failed:", err); botContentDiv.textContent += "\n\n[錯誤：無法連接到伺服器]"; eventSource.close(); submitButton.disabled = false; }; } catch (error) { console.error('Error:', error); botContentDiv.textContent = "[發生錯誤，請查看主控台]"; submitButton.disabled = false; } }
+        function toggleThink(buttonElement) { const content = buttonElement.nextElementSibling; if (content) { content.classList.toggle('visible'); } }
+        function handleEnter(event) { if (event.key === 'Enter' && event.shiftKey) { return; } if (event.key === 'Enter') { event.preventDefault(); sendMessage(); } }
+        let allRecords = [];
+        function initDbManager() { fetchRecords(); const searchBox = document.getElementById('searchBox'); searchBox.addEventListener('input', (e) => { const searchTerm = e.target.value.toLowerCase(); const filteredRecords = allRecords.filter(record => record.content.toLowerCase().includes(searchTerm)); renderTable(filteredRecords); }); }
+        async function fetchRecords() { const loadingDiv = document.getElementById('loading'); const tableBody = document.getElementById('recordTableBody'); loadingDiv.style.display = 'block'; tableBody.innerHTML = ''; document.getElementById('searchBox').value = ''; try { const response = await fetch('/api/records'); if (!response.ok) throw new Error('無法獲取資料'); const fetchedRecords = await response.json(); allRecords = fetchedRecords; renderTable(allRecords); } catch (error) { console.error('獲取紀錄失敗:', error); loadingDiv.innerText = '獲取紀錄失敗，請檢查後端伺服器是否運行。'; } finally { loadingDiv.style.display = 'none'; } }
+        function renderTable(records) { const tableBody = document.getElementById('recordTableBody'); const recordCountP = document.getElementById('recordCount'); tableBody.innerHTML = ''; recordCountP.innerText = `總共有 ${records.length} 筆紀錄`; records.forEach(record => { const row = document.createElement('tr'); row.innerHTML = `<td><span class="record-id">${escapeHtml(record.id)}</span></td><td>${escapeHtml(record.content.substring(0, 200)) + (record.content.length > 200 ? '...' : '')}</td><td>${escapeHtml(record.source)}</td><td><button class="delete-btn" data-id="${escapeHtml(record.id)}">刪除</button></td>`; tableBody.appendChild(row); }); document.querySelectorAll('.delete-btn').forEach(button => { button.addEventListener('click', handleDelete); }); }
+        async function handleDelete(event) { const docId = event.target.dataset.id; if (!confirm(`確定要永久刪除 ID 為 "${docId}" 的這筆紀錄嗎？`)) { return; } try { const response = await fetch('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: docId }) }); const result = await response.json(); if (result.success) { alert('刪除成功！'); fetchRecords(); } else { alert('刪除失敗: ' + result.error); } } catch (error) { console.error('刪除請求失敗:', error); alert('刪除請求失敗，請檢查網路或伺服器狀態。'); } }
+        function escapeHtml(unsafe) { if (typeof unsafe !== 'string') return ''; return unsafe.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
+    </script>
+</body>
+</html>
