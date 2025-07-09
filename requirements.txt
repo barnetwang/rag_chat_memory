@@ -1,0 +1,14 @@
+flask
+requests
+beautifulsoup4
+wikipedia
+langchain
+langchain-community
+langchain-ollama
+langchain-chroma
+langchain-core
+sentence-transformers
+huggingface-hub
+torch
+chromadb
+langchain-ollama
