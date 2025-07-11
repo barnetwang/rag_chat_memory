@@ -1,62 +1,83 @@
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini RAG 整合介面</title>
+    <title>本地端 LLM RAG 整合介面</title>
     <style>
         :root {
             --bg-color: #121212; --primary-text: #e0e0e0; --secondary-text: #b0b0b0;
             --surface-color: #1e1e1e; --border-color: #333; --accent-color: #8257E5;
             --accent-hover: #9466FF; --danger-color: #e53935; --danger-hover: #c62828;
-            --success-color: #4CAF50;
+            --success-color: #4CAF50; --info-color: #2196F3;
         }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; background-color: var(--bg-color); color: var(--primary-text); }
-        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
-        .header-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 20px; }
-        .controls-container { display: flex; align-items: center; gap: 25px; flex-wrap: wrap;}
-        .model-selector-container, .toggle-switch-container { display: flex; align-items: center; gap: 10px; }
-        #model-selector { padding: 8px; background-color: var(--surface-color); color: var(--primary-text); border: 1px solid var(--border-color); border-radius: 5px; font-size: 1em; }
-        #model-status, .toggle-status { font-size: 0.9em; color: var(--secondary-text); transition: color 0.3s; }
-        .toggle-switch-container label { cursor: pointer; }
-        
-        .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border-color); transition: .4s; }
-        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; }
-        input:checked + .slider { background-color: var(--success-color); }
-        input:focus + .slider { box-shadow: 0 0 1px var(--success-color); }
-        input:checked + .slider:before { transform: translateX(22px); }
-        .slider.round { border-radius: 28px; }
-        .slider.round:before { border-radius: 50%; }
-
-        /* Other styles are unchanged */
-        .tabs { display: flex; border-bottom: 2px solid var(--border-color); margin-bottom: 1.5rem; }
-        .tab-button { padding: 1rem 1.5rem; cursor: pointer; background: none; border: none; color: var(--secondary-text); font-size: 1rem; transition: all 0.2s; }
-        .tab-button.active { color: var(--accent-color); border-bottom: 2px solid var(--accent-color); }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        #chat-container { display: flex; flex-direction: column; height: 75vh; background-color: var(--surface-color); border-radius: 8px; overflow: hidden; }
+        .container { max-width: 1600px; margin: 0 auto; padding: 2rem; }
+        h1 { text-align: center; margin-bottom: 2rem; font-weight: 600; }
+        .main-layout { display: flex; gap: 1.5rem; align-items: flex-start; }
+        .left-panel { flex: 3; display: flex; flex-direction: column; }
+        .right-panel { flex: 1; background-color: var(--surface-color); border-radius: 8px; padding: 1.5rem; height: fit-content; min-width: 350px; position: sticky; top: 2rem;}
+        .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 0 0.5rem; margin-bottom: 1rem; }
+        .panel-header h2 { margin: 0; font-size: 1.2em; color: var(--primary-text); }
+        .danger-btn { background-color: transparent; border: 1px solid var(--danger-color); color: var(--danger-color); padding: 8px 12px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; font-size: 0.9em; }
+        .danger-btn:hover { background-color: rgba(229, 57, 53, 0.1); }
+        .danger-btn svg { stroke: var(--danger-color); }
+        .panel-tabs { display: flex; border-bottom: 2px solid var(--border-color); margin-bottom: 1.5rem; }
+        .panel-tab-button { padding: 0.8rem 1rem; cursor: pointer; background: none; border: none; color: var(--secondary-text); font-size: 1rem; transition: all 0.2s; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+        .panel-tab-button.active { color: var(--accent-color); border-bottom-color: var(--accent-color); font-weight: 600;}
+        .panel-tab-content { display: none; }
+        .panel-tab-content.active { display: block; }
+        .right-panel h3 { margin-top: 0; margin-bottom: 1rem; border-left: 3px solid var(--accent-color); padding-left: 0.8rem;}
+        .control-group { margin-bottom: 1.5rem; }
+        .control-group > label { display: block; margin-bottom: 0.5rem; color: var(--secondary-text); font-size: 0.9em;}
+        #model-selector { width: 100%; padding: 8px; background-color: #2c2c2c; color: var(--primary-text); border: 1px solid var(--border-color); border-radius: 5px; font-size: 1em; }
+        #model-status { margin-top: 0.5rem; display: block; font-size: 0.9em; color: var(--secondary-text); transition: color 0.3s;}
+        .toggle-switch-container { display: flex; align-items: center; padding: 0.75rem 0.25rem; border-bottom: 1px solid var(--border-color); }
+        .toggle-switch-container:last-child { border-bottom: none; }
+        .toggle-input { opacity: 0; width: 0; height: 0; position: absolute; }
+        .toggle-label { cursor: pointer; display: flex; align-items: center; width: 100%; }
+        .slider { position: relative; display: inline-block; width: 50px; height: 28px; background-color: #4a4a4a; transition: .4s; border-radius: 28px; flex-shrink: 0; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        .toggle-text { margin-left: 12px; color: var(--primary-text); }
+        .toggle-input:checked + .toggle-label .slider { background-color: var(--success-color); }
+        .toggle-input:checked + .toggle-label .slider:before { transform: translateX(22px); }
+        .toggle-input:focus + .toggle-label .slider { box-shadow: 0 0 1px var(--success-color); }
+        #chat-container { display: flex; flex-direction: column; height: 80vh; background-color: var(--surface-color); border-radius: 8px; overflow: hidden; border: 1px solid var(--border-color);}
         #chat-box { flex-grow: 1; padding: 1rem; overflow-y: auto; }
-        .message { margin-bottom: 1rem; display: flex; }
-        .message .content { max-width: 80%; padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.5; white-space: pre-wrap; }
-        .user-message { justify-content: flex-end; }
+        .message { margin-bottom: 1rem; display: flex; flex-direction: column; }
+        .bot-message { align-items: flex-start; }
+        .user-message { align-items: flex-end; }
+        .message .content { max-width: 80%; padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
         .user-message .content { background-color: var(--accent-color); color: white; border-bottom-right-radius: 2px; }
         .bot-message .content { background-color: #363636; color: var(--primary-text); border-bottom-left-radius: 2px; }
-        #chat-form { display: flex; padding: 1rem; border-top: 1px solid var(--border-color); }
+        #chat-form { display: flex; padding: 1rem; border-top: 1px solid var(--border-color); gap: 0.5rem; }
         #chat-input { flex-grow: 1; padding: 0.75rem; border: 1px solid #444; border-radius: 5px; background-color: #2c2c2c; color: white; font-size: 1rem; resize: none; max-height: 150px; overflow-y: auto; }
-        #chat-submit { margin-left: 0.5rem; padding: 0.75rem 1.5rem; border: none; border-radius: 5px; background-color: var(--accent-color); color: white; cursor: pointer; align-self: flex-end; }
+        #chat-submit { padding: 0.5rem; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 5px; background-color: var(--accent-color); color: white; cursor: pointer; flex-shrink: 0; }
         #chat-submit:hover { background-color: var(--accent-hover); }
         #chat-submit:disabled { background-color: #555; cursor: not-allowed; }
-        .search-box { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 20px; background-color: #2c2c2c; color: #fff; border: 1px solid #444; border-radius: 5px; font-size: 16px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        .sources-container { border-top: 1px dashed var(--border-color); margin: 1rem 0; padding-top: 1rem; max-width: 80%; }
+        .sources-container h4 { margin: 0 0 0.5rem 0; font-size: 0.9em; color: var(--secondary-text); }
+        .source-item { background-color: rgba(255, 255, 255, 0.05); padding: 0.5rem; border-radius: 4px; font-size: 0.8em; margin-bottom: 0.5rem; cursor: pointer; border-left: 3px solid var(--info-color); }
+        .source-item:hover { background-color: rgba(255, 255, 255, 0.1); }
+        .source-content-container { display: none; margin-top: 0.5rem; }
+        .source-content { background-color: rgba(0,0,0,0.2); padding: 0.5rem; border-radius: 4px; white-space: pre-wrap; max-height: 150px; overflow-y: auto; color: var(--secondary-text); border-left: 2px solid #555; margin-bottom: 0.5rem; }
+        mark { background-color: #e6e676; color: #000; padding: 0 2px; border-radius: 2px; }
+        .upload-container { margin-bottom: 2rem; padding: 1rem; border: 1px dashed var(--border-color); border-radius: 5px; text-align: center; }
+        .upload-label { font-size: 0.9em; color: var(--secondary-text); margin-bottom: 1rem; display: block; }
+        #file-upload { display: block; margin: 0 auto 1rem auto; }
+        #upload-btn { background-color: var(--accent-color); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
+        #upload-btn:hover { background-color: var(--accent-hover); }
+        #upload-status { margin-top: 1rem; font-size: 0.9em; }
+        .search-box { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 1rem; background-color: #2c2c2c; color: #fff; border: 1px solid #444; border-radius: 5px; font-size: 16px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { padding: 12px 8px; text-align: left; border-bottom: 1px solid var(--border-color); font-size: 0.9em; }
         th { background-color: #1f1f1f; }
         td { word-break: break-word; white-space: pre-wrap; }
-        .delete-btn { background-color: var(--danger-color); color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+        .delete-btn { background-color: var(--danger-color); color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
         .delete-btn:hover { background-color: var(--danger-hover); }
         .loading { text-align: center; padding: 20px; font-size: 18px; }
         .record-id { font-family: monospace; color: #888; font-size: 12px; }
-        .thinking-block { background-color: rgba(255, 255, 255, 0.05); border-left: 3px solid var(--accent-color); margin-bottom: 1rem; padding: 0.5rem 1rem; border-radius: 4px; }
+        .thinking-block { background-color: rgba(255, 255, 255, 0.05); border-left: 3px solid var(--accent-color); margin-top: 1rem; padding: 0.5rem 1rem; border-radius: 4px; max-width: 80%; }
         .toggle-think { background: none; border: none; color: var(--secondary-text); cursor: pointer; padding: 0; font-size: 0.9em; text-decoration: underline; }
         .thinking-content { display: none; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed var(--border-color); white-space: pre-wrap; color: #ccc; }
         .thinking-content.visible { display: block; }
@@ -64,207 +85,461 @@
 </head>
 <body>
     <div class="container">
-        <div class="header-container">
-            <h1>本地端LLM RAG 整合介面</h1>
-            <div class="controls-container">
-                <div class="toggle-switch-container">
-                    <label for="scraper-toggle">啟用網頁爬蟲</label>
-                    <label class="switch">
-                        <input type="checkbox" id="scraper-toggle" checked>
-                        <span class="slider round"></span>
-                    </label>
-                    <span id="scraper-status" class="toggle-status"></span>
+        <h1>本地端 LLM RAG 整合介面</h1>
+        <div class="main-layout">
+            <div class="left-panel">
+                <div class="panel-header">
+                    <h2>對話視窗</h2>
+                    <button id="clear-chat-btn" class="danger-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                        <span>清除對話</span>
+                    </button>
                 </div>
-                <div class="toggle-switch-container">
-                    <label for="wikipedia-toggle">啟用維基百科</label>
-                    <label class="switch">
-                        <input type="checkbox" id="wikipedia-toggle" checked>
-                        <span class="slider round"></span>
-                    </label>
-                    <span id="wikipedia-status" class="toggle-status"></span>
-                </div>
-                <div class="toggle-switch-container">
-                    <label for="history-toggle">啟用歷史對話</label>
-                    <label class="switch">
-                        <input type="checkbox" id="history-toggle" checked>
-                        <span class="slider round"></span>
-                    </label>
-                    <span id="history-status" class="toggle-status"></span>
-                </div>
-                <div class="model-selector-container">
-                    <label for="model-selector">選取模型:</label>
-                    <select id="model-selector">
-                        <option value="">正在載入...</option>
-                    </select>
-                    <span id="model-status"></span>
-                </div>
-            </div>
-        </div>
-        <div class="tabs">
-            <button class="tab-button active" onclick="openTab(event, 'chat')">聊天</button>
-            <button class="tab-button" onclick="openTab(event, 'db-manager')">資料庫管理</button>
-        </div>
-
-        <div id="chat" class="tab-content active">
-            <div id="chat-container">
-                <div id="chat-box">
-                    <div class="message bot-message">
-                        <div class="content">你好！我是您的 RAG 助理。您可以從右上角選擇一個模型並設定功能來開始對話。</div>
+                <div id="chat-container">
+                    <div id="chat-box">
+                        <div class="message bot-message">
+                            <div class="content">你好！我是您的 RAG 助理。您可以從右側面板選擇模型、設定功能或上傳文件來開始對話。</div>
+                        </div>
+                    </div>
+                    <div id="chat-form">
+                        <textarea id="chat-input" placeholder="在這裡輸入您的問題... (Shift+Enter 換行)" rows="1" onkeydown="handleEnter(event)"></textarea>
+                        <button type="button" id="chat-submit" onclick="sendMessage()">
+                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        </button>
                     </div>
                 </div>
-                <div id="chat-form">
-                    <textarea id="chat-input" placeholder="在這裡輸入您的問題... (Shift+Enter 換行)" rows="1" onkeydown="handleEnter(event)"></textarea>
-                    <button type="button" id="chat-submit" onclick="sendMessage()">傳送</button>
+            </div>
+            <div class="right-panel">
+                <div class="panel-tabs">
+                    <button class="panel-tab-button active" onclick="openPanelTab(event, 'settings')">設定</button>
+                    <button class="panel-tab-button" onclick="openPanelTab(event, 'db-manager')">資料庫管理</button>
+                </div>
+                <div id="settings" class="panel-tab-content">
+                    <h3>模型與功能</h3>
+                    <div class="control-group">
+                        <label for="model-selector">選取模型:</label>
+                        <select id="model-selector">
+                            <option value="">正在載入...</option>
+                        </select>
+                        <span id="model-status"></span>
+                    </div>
+                    <div class="control-group">
+                        <div class="toggle-switch-container">
+                            <input type="checkbox" id="scraper-toggle" class="toggle-input" checked>
+                            <label for="scraper-toggle" class="toggle-label">
+                                <span class="slider"></span>
+                                <span class="toggle-text">啟用網頁爬蟲</span>
+                            </label>
+                        </div>
+                        <div class="toggle-switch-container">
+                            <input type="checkbox" id="wikipedia-toggle" class="toggle-input" checked>
+                             <label for="wikipedia-toggle" class="toggle-label">
+                                <span class="slider"></span>
+                                <span class="toggle-text">啟用維基百科</span>
+                            </label>
+                        </div>
+                        <div class="toggle-switch-container">
+                             <input type="checkbox" id="history-toggle" class="toggle-input" checked>
+                             <label for="history-toggle" class="toggle-label">
+                                <span class="slider"></span>
+                                <span class="toggle-text">啟用歷史對話</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div id="db-manager" class="panel-tab-content">
+                    <h3>資料庫管理</h3>
+                    <div class="upload-container">
+                        <label for="file-upload" class="upload-label">上傳文件 (.pdf, .docx, .txt...)</label>
+                        <input id="file-upload" type="file" accept=".pdf,.doc,.docx,.txt,.md,.html,.pptx">
+                        <button id="upload-btn">上傳並處理</button>
+                        <div id="upload-status"></div>
+                    </div>
+                    <input type="text" id="searchBox" class="search-box" placeholder="即時搜索對話內容...">
+                    <p id="recordCount">總共有 0 筆紀錄</p>
+                    <div id="loading" class="loading">正在載入資料...</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 20%;">ID</th>
+                                <th style="width: 55%;">內容</th>
+                                <th style="width: 15%;">來源</th>
+                                <th style="width: 10%;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recordTableBody"></tbody>
+                    </table>
                 </div>
             </div>
-        </div>
-        <div id="db-manager" class="tab-content">
-            <input type="text" id="searchBox" class="search-box" placeholder="即時搜索對話內容...">
-            <p id="recordCount">總共有 0 筆紀錄</p>
-            <div id="loading" class="loading">正在載入資料...</div>
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width: 20%;">ID</th>
-                        <th style="width: 60%;">內容 (預覽)</th>
-                        <th style="width: 10%;">來源</th>
-                        <th style="width: 10%;">操作</th>
-                    </tr>
-                </thead>
-                <tbody id="recordTableBody"></tbody>
-            </table>
         </div>
     </div>
 
     <script>
-        //Global Vars
-        let chatBox, chatInput, submitButton, modelSelector, modelStatus;
-        let historyToggle, historyStatus, wikipediaToggle, wikipediaStatus, scraperToggle, scraperStatus;
+        // Global Vars
+        let chatBox, chatInput, submitButton, modelSelector, modelStatus, clearChatBtn;
+        let historyToggle, wikipediaToggle, scraperToggle;
+        let uploadBtn, fileInput, uploadStatus;
 
-        //Init Function
         document.addEventListener('DOMContentLoaded', () => {
+            // Get all elements
             chatBox = document.getElementById('chat-box');
             chatInput = document.getElementById('chat-input');
             submitButton = document.getElementById('chat-submit');
             modelSelector = document.getElementById('model-selector');
             modelStatus = document.getElementById('model-status');
+            clearChatBtn = document.getElementById('clear-chat-btn');
             historyToggle = document.getElementById('history-toggle');
-            historyStatus = document.getElementById('history-status');
             wikipediaToggle = document.getElementById('wikipedia-toggle');
-            wikipediaStatus = document.getElementById('wikipedia-status');
             scraperToggle = document.getElementById('scraper-toggle');
-            scraperStatus = document.getElementById('scraper-status');          
-            loadModelsAndSettings();
-            historyToggle.addEventListener('change', handleHistoryToggle);
-            wikipediaToggle.addEventListener('change', handleWikipediaToggle);
-            scraperToggle.addEventListener('change', handleScraperToggle);
-
+            uploadBtn = document.getElementById('upload-btn');
+            fileInput = document.getElementById('file-upload');
+            uploadStatus = document.getElementById('upload-status');
+            
+            // Add event listeners
+            historyToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_history'));
+            wikipediaToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_wikipedia'));
+            scraperToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_scraper'));
+            modelSelector.addEventListener('change', handleModelChange);
+            clearChatBtn.addEventListener('click', handleClearChat);
+            uploadBtn.addEventListener('click', handleFileUpload);
             chatInput.addEventListener('input', () => {
                 chatInput.style.height = 'auto';
                 chatInput.style.height = (chatInput.scrollHeight) + 'px';
             });
+
+            // Initialize
+            loadModelsAndSettings();
+            openPanelTab({ currentTarget: document.querySelector('.panel-tab-button') }, 'settings');
         });
 
-        // JS Functions Start
+        // --- JS Functions ---
         async function loadModelsAndSettings() {
             try {
                 const response = await fetch('/api/models');
-                if (!response.ok) throw new Error('無法獲取模型列表');
+                if (!response.ok) throw new Error(`無法獲取模型: ${response.statusText}`);
                 const data = await response.json();
                 
-                // Load Models
                 const models = data.models;
                 const currentModel = data.current_model;
                 modelSelector.innerHTML = '';
-                if (models.length === 0) {
+                if (!models || models.length === 0) {
                     modelSelector.innerHTML = '<option>無可用模型</option>';
                     modelSelector.disabled = true;
+                    submitButton.disabled = true;
                 } else {
                     models.forEach(model => {
-                        const option = document.createElement('option');
-                        option.value = model;
-                        option.textContent = model;
+                        const option = new Option(model, model);
                         if (model === currentModel) {
                             option.selected = true;
                             modelStatus.textContent = `當前: ${currentModel.split(':')[0]}`;
                         }
                         modelSelector.appendChild(option);
                     });
-                    modelSelector.addEventListener('change', handleModelChange);
+                    modelSelector.disabled = false;
+                    submitButton.disabled = false;
                 }
-
-                // Set initial state for all toggles
                 historyToggle.checked = data.history_enabled;
-                historyStatus.textContent = data.history_enabled ? '已啟用' : '已停用';
-                
                 wikipediaToggle.checked = data.wikipedia_enabled;
-                wikipediaStatus.textContent = data.wikipedia_enabled ? '已啟用' : '已停用';
-                
                 scraperToggle.checked = data.scraper_enabled;
-                scraperStatus.textContent = data.scraper_enabled ? '已啟用' : '已停用';
-
             } catch (error) {
                 console.error('載入設定失敗:', error);
-                modelSelector.innerHTML = '<option>載入失敗</option>';
-                historyStatus.textContent = '狀態未知';
-                wikipediaStatus.textContent = '狀態未知';
-                scraperStatus.textContent = '狀態未知'; // <-- ADDED
+                modelStatus.textContent = "與後端連線失敗";
+                modelStatus.style.color = "var(--danger-color)";
+                submitButton.disabled = true;
             }
         }
 
-        async function handleScraperToggle(event) {
-            await handleToggleChange(event.target, scraperStatus, '/api/set_scraper', '網頁爬蟲');
-        }
-
-        async function handleWikipediaToggle(event) {
-            await handleToggleChange(event.target, wikipediaStatus, '/api/set_wikipedia', '維基百科搜尋');
-        }
-
-        async function handleHistoryToggle(event) {
-            await handleToggleChange(event.target, historyStatus, '/api/set_history', '歷史對話檢索');
-        }
-
-        async function handleToggleChange(toggleElement, statusElement, apiUrl, featureName) {
-            const isEnabled = toggleElement.checked;
-            statusElement.textContent = isEnabled ? '啟用中...' : '停用中...';
+        async function handleToggleChange(toggleElement, apiUrl) {
             try {
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ enabled: isEnabled })
-                });
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: toggleElement.checked }) });
                 if (!response.ok) throw new Error('伺服器切換失敗');
+            } catch (error) {
+                console.error(`切換失敗:`, error);
+                toggleElement.checked = !toggleElement.checked;
+            }
+        }
+
+        async function handleModelChange(event) {
+            const selectedModel = event.target.value;
+            modelStatus.textContent = `切換中...`;
+            modelStatus.style.color = "var(--secondary-text)";
+            try {
+                const response = await fetch('/api/set_model', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: selectedModel }) });
+                if (!response.ok) throw new Error('伺服器切換模型失敗');
                 const result = await response.json();
                 if (result.success) {
-                    statusElement.textContent = isEnabled ? '已啟用 ✅' : '已停用 ❌';
-                    statusElement.style.color = isEnabled ? 'var(--success-color)' : 'var(--danger-color)';
-                } else {
-                    throw new Error(result.error || '未知錯誤');
-                }
+                    modelStatus.textContent = `當前: ${selectedModel.split(':')[0]} ✅`;
+                    modelStatus.style.color = "var(--success-color)";
+                } else { throw new Error(result.error || '未知錯誤'); }
             } catch (error) {
-                console.error(`切換${featureName}失敗:`, error);
-                statusElement.textContent = `切換失敗!`;
-                statusElement.style.color = 'var(--danger-color)';
-                toggleElement.checked = !isEnabled;
+                console.error('切換模型請求失敗:', error);
+                modelStatus.textContent = `切換失敗`;
+                modelStatus.style.color = "var(--danger-color)";
             }
             setTimeout(() => {
-                 statusElement.textContent = toggleElement.checked ? '已啟用' : '已停用';
-                 statusElement.style.color = 'var(--secondary-text)';
+                 modelStatus.textContent = `當前: ${modelSelector.value.split(':')[0]}`;
+                 modelStatus.style.color = "var(--secondary-text)";
             }, 4000);
         }
 
-        async function handleModelChange(event) { const selectedModel = event.target.value; modelStatus.textContent = `切換中...`; modelStatus.style.color = 'var(--secondary-text)'; try { const response = await fetch('/api/set_model', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: selectedModel }) }); if (!response.ok) throw new Error('伺服器切換模型失敗'); const result = await response.json(); if (result.success) { modelStatus.textContent = `當前: ${selectedModel.split(':')[0]} ✅`; modelStatus.style.color = 'var(--success-color)'; } else { throw new Error(result.error || '未知錯誤'); } } catch (error) { console.error('切換模型請求失敗:', error); modelStatus.textContent = `切換失敗`; modelStatus.style.color = 'var(--danger-color)'; } setTimeout(() => { modelStatus.textContent = `當前: ${modelSelector.value.split(':')[0]}`; modelStatus.style.color = 'var(--secondary-text)'; }, 4000); }
-        function openTab(evt, tabName) { let i, tabcontent, tablinks; tabcontent = document.getElementsByClassName("tab-content"); for (i = 0; i < tabcontent.length; i++) { tabcontent[i].style.display = "none"; } tablinks = document.getElementsByClassName("tab-button"); for (i = 0; i < tablinks.length; i++) { tablinks[i].className = tablinks[i].className.replace(" active", ""); } document.getElementById(tabName).style.display = "block"; evt.currentTarget.className += " active"; if (tabName === 'db-manager') { if (!window.dbManagerInitialized) { initDbManager(); window.dbManagerInitialized = true; } else { fetchRecords(); } } }
-        function appendMessage(text, sender) { const messageDiv = document.createElement('div'); messageDiv.className = `message ${sender}-message`; const contentDiv = document.createElement('div'); contentDiv.className = 'content'; contentDiv.textContent = text; messageDiv.appendChild(contentDiv); chatBox.appendChild(messageDiv); chatBox.scrollTop = chatBox.scrollHeight; return messageDiv; }
-        async function sendMessage() { const question = chatInput.value.trim(); if (!question) return; appendMessage(question, 'user'); chatInput.value = ''; chatInput.style.height = 'auto'; submitButton.disabled = true; const botMessageDiv = appendMessage('', 'bot'); const botContentDiv = botMessageDiv.querySelector('.content'); let fullBotResponse = ''; try { const eventSource = new EventSource(`/ask?question=${encodeURIComponent(question)}`); eventSource.onmessage = function(event) { if (event.data === '[DONE]') { eventSource.close(); submitButton.disabled = false; if (fullBotResponse.includes('<think>') && fullBotResponse.includes('</think>')) { let safeHtml = escapeHtml(fullBotResponse); const thinkBlockHtml = `<div class='thinking-block'><button class='toggle-think' onclick='toggleThink(this)'>顯示/隱藏思考過程</button><div class='thinking-content'>`; safeHtml = safeHtml.replace(/&lt;think&gt;/, thinkBlockHtml); safeHtml = safeHtml.replace(/&lt;\/think&gt;/, '</div></div>'); botContentDiv.innerHTML = safeHtml; } else { botContentDiv.textContent = fullBotResponse; } chatBox.scrollTop = chatBox.scrollHeight; return; } const data = JSON.parse(event.data); fullBotResponse += data.content; botContentDiv.textContent = fullBotResponse; chatBox.scrollTop = chatBox.scrollHeight; }; eventSource.onerror = function(err) { console.error("EventSource failed:", err); botContentDiv.textContent += "\n\n[錯誤：無法連接到伺服器]"; eventSource.close(); submitButton.disabled = false; }; } catch (error) { console.error('Error:', error); botContentDiv.textContent = "[發生錯誤，請查看主控台]"; submitButton.disabled = false; } }
-        function toggleThink(buttonElement) { const content = buttonElement.nextElementSibling; if (content) { content.classList.toggle('visible'); } }
-        function handleEnter(event) { if (event.key === 'Enter' && event.shiftKey) { return; } if (event.key === 'Enter') { event.preventDefault(); sendMessage(); } }
+        function handleClearChat() {
+            if (!confirm('您確定要清除目前視窗中的對話嗎？')) return;
+            chatBox.innerHTML = `<div class="message bot-message"><div class="content">你好！我是您的 RAG 助理。您可以從右側面板選擇模型、設定功能或上傳文件來開始對話。</div></div>`;
+        }
+        
+        async function handleFileUpload() {
+            const file = fileInput.files[0];
+            if (!file) {
+                uploadStatus.textContent = "請先選取一個檔案。";
+                uploadStatus.style.color = "var(--danger-color)";
+                return;
+            }
+            const formData = new FormData();
+            formData.append('file', file);
+            uploadStatus.textContent = `正在上傳並處理 ${file.name}...`;
+            uploadStatus.style.color = "var(--info-color)";
+            uploadBtn.disabled = true;
+            try {
+                const response = await fetch('/api/upload_document', { method: 'POST', body: formData });
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    uploadStatus.textContent = result.message;
+                    uploadStatus.style.color = "var(--success-color)";
+                    if (document.getElementById('db-manager').classList.contains('active')) {
+                        fetchRecords();
+                    }
+                } else {
+                    throw new Error(result.error || '上傳失敗');
+                }
+            } catch (error) {
+                uploadStatus.textContent = `錯誤: ${error.message}`;
+                uploadStatus.style.color = "var(--danger-color)";
+            } finally {
+                uploadBtn.disabled = false;
+                fileInput.value = '';
+            }
+        }
+
+        function openPanelTab(evt, tabName) {
+            let i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("panel-tab-content");
+            for (i = 0; i < tabcontent.length; i++) tabcontent[i].style.display = "none";
+            tablinks = document.getElementsByClassName("panel-tab-button");
+            for (i = 0; i < tablinks.length; i++) tablinks[i].className = tablinks[i].className.replace(" active", "");
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+            if (tabName === 'db-manager') {
+                if (!window.dbManagerInitialized) {
+                    initDbManager();
+                    window.dbManagerInitialized = true;
+                } else { fetchRecords(); }
+            }
+        }
+
+        function appendMessage(text, sender) {
+            const messageWrapper = document.createElement('div');
+            messageWrapper.className = `message ${sender}-message`;
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'content';
+            if (sender === 'user') {
+                contentDiv.textContent = text;
+            }
+            messageWrapper.appendChild(contentDiv);
+            chatBox.appendChild(messageWrapper);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return messageWrapper;
+        }
+        
+        function appendSources(messageWrapper, sources, userQuestion) {
+            let sourcesContainer = messageWrapper.querySelector('.sources-container');
+            if (sourcesContainer) return;
+            sourcesContainer = document.createElement('div');
+            sourcesContainer.className = 'sources-container';
+            const title = document.createElement('h4');
+            title.textContent = '📚 參考來源：';
+            sourcesContainer.appendChild(title);
+            
+            const groupedSources = {};
+            sources.forEach(source => {
+                let displayName = source.metadata.source.split(/[\\/]/).pop();
+                if (displayName === 'conversation' && source.metadata.timestamp) {
+                    displayName = `歷史對話 (${source.metadata.timestamp})`;
+                }
+                if (!groupedSources[displayName]) {
+                    groupedSources[displayName] = [];
+                }
+                groupedSources[displayName].push(source.page_content);
+            });
+
+            const keywords = userQuestion.split(/\s+/).filter(word => word.length > 2 && !/^[a-zA-Z0-9-_]+$/.test(word));
+            const regex = keywords.length > 0 ? new RegExp(`(${keywords.join('|')})`, 'gi') : null;
+
+            for (const [displayName, contents] of Object.entries(groupedSources)) {
+                const sourceItem = document.createElement('div');
+                sourceItem.className = 'source-item';
+                sourceItem.textContent = `來源: ${displayName}`;
+                
+                sourceItem.addEventListener('click', () => {
+                    let contentContainer = sourceItem.querySelector('.source-content-container');
+                    if (!contentContainer) {
+                        contentContainer = document.createElement('div');
+                        contentContainer.className = 'source-content-container';
+                        contents.forEach(content => {
+                            const contentDiv = document.createElement('div');
+                            contentDiv.className = 'source-content';
+                            let highlightedContent = escapeHtml(content);
+                            if (regex) {
+                                highlightedContent = highlightedContent.replace(regex, `<mark>$1</mark>`);
+                            }
+                            contentDiv.innerHTML = highlightedContent;
+                            contentContainer.appendChild(contentDiv);
+                        });
+                        sourceItem.appendChild(contentContainer);
+                    }
+                    contentContainer.style.display = contentContainer.style.display === 'block' ? 'none' : 'block';
+                });
+                sourcesContainer.appendChild(sourceItem);
+            }
+            messageWrapper.insertBefore(sourcesContainer, messageWrapper.querySelector('.content'));
+        }
+
+        async function sendMessage() {
+            const question = chatInput.value.trim();
+            if (!question) return;
+            appendMessage(question, 'user');
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+            submitButton.disabled = true;
+            const botMessageWrapper = appendMessage('', 'bot');
+            const botContentDiv = botMessageWrapper.querySelector('.content');
+            let fullBotResponse = '';
+            try {
+                const eventSource = new EventSource(`/ask?question=${encodeURIComponent(question)}`);
+                eventSource.onmessage = function(event) {
+                    if (event.data === '[DONE]') {
+                        eventSource.close();
+                        submitButton.disabled = false;
+                        if (fullBotResponse.includes('<think>')) {
+                            const thinkMatch = /<think>([\s\S]*)<\/think>([\s\S]*)/.exec(fullBotResponse);
+                            if (thinkMatch) {
+                                const thinkContent = thinkMatch[1].trim();
+                                const mainContent = thinkMatch[2].trim();
+                                const thinkBlock = document.createElement('div');
+                                thinkBlock.className = 'thinking-block';
+                                thinkBlock.innerHTML = `<button class='toggle-think' onclick='toggleThink(this)'>顯示/隱藏思考過程</button><div class='thinking-content'>${escapeHtml(thinkContent)}</div>`;
+                                botMessageWrapper.insertBefore(thinkBlock, botContentDiv);
+                                botContentDiv.textContent = mainContent;
+                            }
+                        }
+                        return;
+                    }
+
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'sources') {
+                        appendSources(botMessageWrapper, data.data, question);
+                    } else if (data.type === 'content' && data.content) {
+                        fullBotResponse += data.content;
+                        botContentDiv.textContent = fullBotResponse;
+                    } else if (data.type === 'error' || data.error) {
+                        botContentDiv.innerHTML += `<p style="color:var(--danger-color)">[錯誤]：${escapeHtml(data.error)}</p>`;
+                        eventSource.close();
+                        submitButton.disabled = false;
+                    }
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                };
+                eventSource.onerror = function(err) {
+                    botContentDiv.innerHTML += `<p style="color:var(--danger-color)">[錯誤]：無法連接到伺服器。</p>`;
+                    eventSource.close();
+                    submitButton.disabled = false;
+                };
+            } catch (error) {
+                console.error('Error:', error);
+                botContentDiv.textContent = "[發生錯誤，請查看主控台]";
+                submitButton.disabled = false;
+            }
+        }
+        
+        function toggleThink(buttonElement) {
+            const content = buttonElement.nextElementSibling;
+            if (content) content.classList.toggle('visible');
+        }
+
+        function handleEnter(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+        
         let allRecords = [];
-        function initDbManager() { fetchRecords(); const searchBox = document.getElementById('searchBox'); searchBox.addEventListener('input', (e) => { const searchTerm = e.target.value.toLowerCase(); const filteredRecords = allRecords.filter(record => record.content.toLowerCase().includes(searchTerm)); renderTable(filteredRecords); }); }
-        async function fetchRecords() { const loadingDiv = document.getElementById('loading'); const tableBody = document.getElementById('recordTableBody'); loadingDiv.style.display = 'block'; tableBody.innerHTML = ''; document.getElementById('searchBox').value = ''; try { const response = await fetch('/api/records'); if (!response.ok) throw new Error('無法獲取資料'); const fetchedRecords = await response.json(); allRecords = fetchedRecords; renderTable(allRecords); } catch (error) { console.error('獲取紀錄失敗:', error); loadingDiv.innerText = '獲取紀錄失敗，請檢查後端伺服器是否運行。'; } finally { loadingDiv.style.display = 'none'; } }
-        function renderTable(records) { const tableBody = document.getElementById('recordTableBody'); const recordCountP = document.getElementById('recordCount'); tableBody.innerHTML = ''; recordCountP.innerText = `總共有 ${records.length} 筆紀錄`; records.forEach(record => { const row = document.createElement('tr'); row.innerHTML = `<td><span class="record-id">${escapeHtml(record.id)}</span></td><td>${escapeHtml(record.content.substring(0, 200)) + (record.content.length > 200 ? '...' : '')}</td><td>${escapeHtml(record.source)}</td><td><button class="delete-btn" data-id="${escapeHtml(record.id)}">刪除</button></td>`; tableBody.appendChild(row); }); document.querySelectorAll('.delete-btn').forEach(button => { button.addEventListener('click', handleDelete); }); }
-        async function handleDelete(event) { const docId = event.target.dataset.id; if (!confirm(`確定要永久刪除 ID 為 "${docId}" 的這筆紀錄嗎？`)) { return; } try { const response = await fetch('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: docId }) }); const result = await response.json(); if (result.success) { alert('刪除成功！'); fetchRecords(); } else { alert('刪除失敗: ' + result.error); } } catch (error) { console.error('刪除請求失敗:', error); alert('刪除請求失敗，請檢查網路或伺服器狀態。'); } }
-        function escapeHtml(unsafe) { if (typeof unsafe !== 'string') return ''; return unsafe.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
+        function initDbManager() {
+            fetchRecords();
+            document.getElementById('searchBox').addEventListener('input', (e) => {
+                const searchTerm = e.target.value.toLowerCase();
+                renderTable(allRecords.filter(record => record.content.toLowerCase().includes(searchTerm)));
+            });
+        }
+        
+        async function fetchRecords() {
+            const loadingDiv = document.getElementById('loading');
+            const tableBody = document.getElementById('recordTableBody');
+            loadingDiv.style.display = 'block';
+            tableBody.innerHTML = '';
+            document.getElementById('searchBox').value = '';
+            try {
+                const response = await fetch('/api/records');
+                if (!response.ok) throw new Error('無法獲取資料');
+                allRecords = await response.json();
+                renderTable(allRecords);
+            } catch (error) {
+                console.error('獲取紀錄失敗:', error);
+                loadingDiv.innerText = '獲取紀錄失敗。';
+            } finally {
+                loadingDiv.style.display = 'none';
+            }
+        }
+        
+        function renderTable(records) {
+            const tableBody = document.getElementById('recordTableBody');
+            document.getElementById('recordCount').innerText = `總共有 ${records.length} 筆紀錄`;
+            tableBody.innerHTML = '';
+            records.forEach(record => {
+                const row = tableBody.insertRow();
+                let sourceText = record.metadata.source;
+                if (sourceText === 'conversation' && record.metadata.timestamp) {
+                    sourceText = `歷史對話 (${record.metadata.timestamp})`;
+                } else {
+                    sourceText = sourceText.split(/[\\/]/).pop();
+                }
+                row.innerHTML = `<td><span class="record-id">${escapeHtml(record.id)}</span></td>
+                                 <td>${escapeHtml(record.content.substring(0, 150)) + (record.content.length > 150 ? '...' : '')}</td>
+                                 <td>${escapeHtml(sourceText)}</td>
+                                 <td><button class="delete-btn" data-id="${escapeHtml(record.id)}">刪除</button></td>`;
+            });
+            document.querySelectorAll('.delete-btn').forEach(button => button.addEventListener('click', handleDelete));
+        }
+        
+        async function handleDelete(event) {
+            const docId = event.target.dataset.id;
+            if (!confirm(`確定要永久刪除 ID 為 "${docId}" 的這筆紀錄嗎？`)) return;
+            try {
+                const response = await fetch('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: docId }) });
+                const result = await response.json();
+                if (result.success) {
+                    alert('刪除成功！');
+                    fetchRecords();
+                } else { alert('刪除失敗: ' + result.error); }
+            } catch (error) {
+                console.error('刪除請求失敗:', error);
+                alert('刪除請求失敗。');
+            }
+        }
+        
+        function escapeHtml(unsafe) {
+            if (typeof unsafe !== 'string') return '';
+            return unsafe.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
     </script>
 </body>
 </html>
