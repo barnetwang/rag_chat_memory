@@ -12,3 +12,5 @@ huggingface-hub
 torch
 chromadb
 langchain-ollama
+unstructured
+unstructured[pdf]
