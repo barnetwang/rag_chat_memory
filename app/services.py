@@ -54,39 +54,43 @@ class ConversationalRAG:
         self.current_llm_model = None
         self.set_llm_model(llm_model)
 
-        self.retriever = self.vector_db.as_retriever(search_kwargs={'k': 3}) # 增加檢索數量以提供更多來源
+        self.retriever = self.vector_db.as_retriever(search_kwargs={'k': 3})
 
         self.main_prompt = PromptTemplate(
-            template="""你是一個多功能 AI 助理。請根據以下提供的多種資料來回答使用者的問題。
+            template="""你是一位頂級的 AI 技術文件分析師。你的任務是嚴格基於下面提供的「上下文資料」，深入地回答「使用者當前問題」。
 
-1.  **[網頁內容]**: 如果提供，這是從使用者指定的網址中抓取的即時內容。請優先使用此內容來回答。
-2.  **[維基百科資料]**: 如果沒有提供網頁內容，或網頁內容不足，請使用此資料來回答事實性問題。
-3.  **[相關歷史對話]**: 用它來理解問題的上下文，維持對話的連貫性。
+**執行流程與規則：**
 
-請依照以下優先級使用資料: [網頁內容] > [維基百科資料] > 你的內部知識。
-如果提供的資料都無法回答，請告知使用者你找不到相關資訊。
-在你的最終答案前，你可以使用 <think>...</think> 標籤來寫下你的思考過程，這部分將會被前端介面自動摺疊。
+1.  **深入分析上下文**：首先，仔細閱讀並完全理解「上下文資料」中與「使用者當前問題」相關的所有片段。
+2.  **組織與回答**：
+    *   **如果「上下文資料」中包含回答問題所需的資訊**，你的任務是【授權並鼓勵】你使用自己的語言能力，對這些碎片化的資訊進行**總結、推理、和重新組織**，以形成一個連貫、清晰、專業的回答。你的回答應該看起來像是該領域專家寫的，而不僅僅是原文的複製。
+    *   **如果「上下文資料」完全沒有提及問題的核心主題**，那麼你【必須】只回答：「根據我所掌握的資料，我找不到關於 '{question}' 的確切資訊。」
+3.  **定義「幻覺」禁區**：你【絕對禁止】引入任何**在「上下文資料」中完全不存在的、憑空捏造的事實或數據**。例如，如果上下文沒有提到版本號，你就不能自己編一個版本號。你的所有核心論點都必須源於上下文。
+4.  **思考過程**：在最終答案前，你可以使用 <think>...</think> 標籤來寫下你的分析、推理和判斷過程。
 
 ---
-[網頁內容]:
-{web_context}
----
-[維基百科資料]:
-{wiki_context}
----
-[相關歷史對話]:
-{history_context}
+[上下文資料]:
+{context}
 ---
 
 [使用者當前問題]: {question}
 
 你的回答:""",
-            input_variables=["web_context", "wiki_context", "history_context", "question"]
+            input_variables=["context", "question"]
         )
         
         self.summarizer_prompt = PromptTemplate(
             template="請將以下提供的文字內容總結成一段簡潔、流暢的摘要，保留其核心資訊。文字內容如下：\n\n---\n{text_to_summarize}\n---\n\n摘要:",
             input_variables=["text_to_summarize"]
+        )
+
+        self.query_expansion_prompt = PromptTemplate(
+            template="""你是一個查詢優化助理。請根據使用者提供的原始查詢，生成一個或多個更具體、更可能在技術文件中找到相關內容的擴充查詢。請只返回擴充後的查詢，不要添加任何解釋。
+
+[原始查詢]: {original_query}
+
+[擴充查詢]:""",
+            input_variables=["original_query"]
         )
 
     def set_llm_model(self, model_name: str):
@@ -124,7 +128,6 @@ class ConversationalRAG:
         splits = text_splitter.split_documents(docs)
         self.vector_db.add_documents(splits)
         print(f"✅ 文件 '{os.path.basename(file_path)}' 已成功加入資料庫。")
-
         if os.path.exists(file_path):
             os.remove(file_path)
 
@@ -171,53 +174,74 @@ class ConversationalRAG:
             return text[:self.history_summary_threshold]
 
     def ask(self, question: str, stream: bool = False):
-        print(f"\n🤔 收到請求，問題: '{question}' (流式: {stream})")
-        
-        web_context = "無"
+        print(f"\n🤔 收到請求，問題: '{question}'")
+
+        print("💡 正在進行查詢擴展...")
+        try:
+            expansion_prompt_value = self.query_expansion_prompt.format(original_query=question)
+            expanded_query = self.llm.invoke(expansion_prompt_value).strip()
+            print(f"   -> 擴展後查詢: '{expanded_query}'")
+            retrieval_query = f"{question}\n{expanded_query}"
+        except Exception as e:
+            print(f"   -> 查詢擴展失敗: {e}，將使用原始查詢。")
+            retrieval_query = question
+
+        context_parts = []
+        retrieved_docs = []
+
+        # 網頁內容
         if self.use_scraper:
             url_match = re.search(r'https?://[\S]+', question)
             if url_match:
                 url = url_match.group(0)
                 web_context = self._scrape_webpage_text(url)
-        else:
-            print("ⓘ (外部) 網頁爬蟲已停用。")
-
-        wiki_context = "維基百科查詢已停用"
-        if self.use_wikipedia:
-            wiki_context = self._search_wikipedia(question)
-        else:
-            print("ⓘ (外部) 維基百科查詢已停用。")
+                if "無法爬取" not in web_context:
+                    context_parts.append(f"來源：網頁內容 ({url})\n內容：\n{web_context}")
         
-        history_context = "歷史對話檢索已停用"
-        retrieved_docs = []
+        # 維基百科內容
+        if self.use_wikipedia:
+            wiki_context = self._search_wikipedia(retrieval_query)
+            if wiki_context not in ["無相關資料", "查詢時發生錯誤"]:
+                context_parts.append(f"來源：維基百科\n內容：\n{wiki_context}")
+        
+        # 歷史對話與文件內容
         if self.use_history:
-            print("🔍 (內部) 正在檢索歷史對話...")
-            retrieved_docs = self.retriever.get_relevant_documents(question)
-
-            retrieved_docs = [doc for doc in retrieved_docs if doc.page_content != "start"]
+            print(f"🔍 (內部) 正在使用查詢 '{retrieval_query[:50]}...' 進行檢索...")
+            docs_from_db = self.retriever.get_relevant_documents(retrieval_query)
+            docs_from_db = [doc for doc in docs_from_db if doc.page_content != "start"]
             
-            if not retrieved_docs:
-                history_context = "無相關歷史對話"
-            else:
-                context_from_docs = "\n---\n".join([doc.page_content for doc in retrieved_docs])
+            if docs_from_db:
+                key_term_match = re.search(r'(_[A-Z0-9]{2,4}\b)', question)
+                if key_term_match:
+                    key_term = key_term_match.group(1)
+                    print(f"   -> 正在過濾結果，要求必須包含關鍵詞 '{key_term}'...")
+                    filtered_docs = [doc for doc in docs_from_db if key_term in doc.page_content]
+                    if filtered_docs:
+                        docs_from_db = filtered_docs
+                
+                retrieved_docs = docs_from_db # 更新用於顯示來源的變數
+                context_from_docs = "\n---\n".join([f"來源：{doc.metadata.get('source', '未知')}\n內容：\n{doc.page_content}" for doc in docs_from_db])
+                
                 if len(context_from_docs) > self.history_summary_threshold:
-                    print(f"ⓘ (內部) 歷史對話過長 ({len(context_from_docs)} 字元)，正在進行總結...")
-                    history_context = self._summarize_text(context_from_docs)
+                    print(f"ⓘ (內部) 上下文過長 ({len(context_from_docs)} 字元)，正在進行總結...")
+                    summarized_context = self._summarize_text(context_from_docs)
+                    context_parts.append(f"[總結後的相關資料]:\n{summarized_context}")
                 else:
-                    history_context = context_from_docs
-        else:
-            print("ⓘ (內部) 歷史對話檢索已停用。")
+                    context_parts.append(f"[相關資料庫內容]:\n{context_from_docs}")
+        
+        # 組合所有上下文
+        final_context = "\n\n".join(context_parts)
+        if not final_context:
+            final_context = "沒有可用的上下文資料。"
 
         print("📝 正在組合 Prompt...")
         formatted_prompt = self.main_prompt.format(
-            web_context=web_context,
-            wiki_context=wiki_context,
-            history_context=history_context,
+            context=final_context,
             question=question
         )
         
+        print(f"🤖 正在使用模型 '{self.current_llm_model}' 生成回答...")
         if stream:
-
             return self.stream_and_save(question, formatted_prompt, retrieved_docs)
         else:
             try:
@@ -232,17 +256,9 @@ class ConversationalRAG:
     def stream_and_save(self, question, prompt, source_documents):
         full_answer = ""
         try:
-
             if source_documents:
-                source_data = [
-                    {
-                        "page_content": doc.page_content,
-                        "metadata": doc.metadata 
-                    } 
-                    for doc in source_documents
-                ]
+                source_data = [{"page_content": doc.page_content, "metadata": doc.metadata} for doc in source_documents]
                 yield f"data: {json.dumps({'type': 'sources', 'data': source_data})}\n\n"
-
 
             for chunk in self.llm.stream(prompt):
                 full_answer += chunk
