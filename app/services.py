@@ -3,9 +3,10 @@ import json
 import re
 import requests
 import wikipedia
-
 from datetime import datetime
 from bs4 import BeautifulSoup
+
+# LangChain Imports
 from langchain_ollama.llms import OllamaLLM
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
@@ -13,16 +14,14 @@ from langchain_core.documents import Document
 from langchain.prompts import PromptTemplate
 from langchain_community.document_loaders import UnstructuredFileLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.retrievers import BM25Retriever, EnsembleRetriever
+from langchain_core.output_parsers import StrOutputParser
 
 def get_ollama_models(ollama_base_url="http://localhost:11434"):
     try:
         response = requests.get(f"{ollama_base_url}/api/tags")
         response.raise_for_status()
-        models_data = response.json().get("models", [])
-        return [model["name"] for model in models_data]
-    except requests.exceptions.ConnectionError:
-        print(f"❌ 錯誤：無法連接到 Ollama 服務 ({ollama_base_url})。請確認 Ollama 正在運行。")
-        return []
+        return [model["name"] for model in response.json().get("models", [])]
     except Exception as e:
         print(f"❌ 獲取 Ollama 模型時發生錯誤: {e}")
         return []
@@ -31,6 +30,7 @@ class ConversationalRAG:
     def __init__(self, persist_directory, embedding_model_name, llm_model, ollama_base_url, 
                  use_wikipedia=True, use_history=True, use_scraper=True, 
                  history_summary_threshold=2000):
+        # --- Basic attribute initialization ---
         self.persist_directory = persist_directory
         self.use_wikipedia = use_wikipedia
         self.use_history = use_history
@@ -38,59 +38,56 @@ class ConversationalRAG:
         self.ollama_base_url = ollama_base_url
         self.history_summary_threshold = history_summary_threshold
         
+        # --- Model and database initialization ---
         print("正在初始化 Embedding 模型...")
-        self.embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name, model_kwargs={'device': 'cpu'})
-
+        print(f"   -> 使用模型: {embedding_model_name}")
+        self.embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name, model_kwargs={'device': 'cpu', 'trust_remote_code': True})
         print("正在初始化/載入向量資料庫...")
-        if not os.path.exists(self.persist_directory):
-            print("找不到現有資料庫，將創建一個新的。")
-            dummy_doc = Document(page_content="start", metadata={"source": "initialization"})
-            self.vector_db = Chroma.from_documents([dummy_doc], self.embeddings, persist_directory=self.persist_directory)
-        else:
-            print("找到現有資料庫，正在載入...")
-            self.vector_db = Chroma(persist_directory=self.persist_directory, embedding_function=self.embeddings)
+        self.vector_db = Chroma(persist_directory=self.persist_directory, embedding_function=self.embeddings)
+        print("正在設定 LLM...")
+        self.llm = OllamaLLM(model=llm_model, base_url=self.ollama_base_url)
+        self.current_llm_model = llm_model
+
+        # --- Hybrid retriever initialization ---
+        print("🔧 正在初始化混合檢索器...")
+        self.vector_retriever = self.vector_db.as_retriever(search_kwargs={'k': 5})
+        self.ensemble_retriever = self.vector_retriever
+        self.update_ensemble_retriever()
         
-        self.llm = None
-        self.current_llm_model = None
-        self.set_llm_model(llm_model)
-
-        self.retriever = self.vector_db.as_retriever(search_kwargs={'k': 3})
-
-        self.main_prompt = PromptTemplate(
-            template="""你是一位頂級的 AI 技術文件分析師。你的任務是嚴格基於下面提供的「上下文資料」，深入地回答「使用者當前問題」。
+        # --- Prompt Templates 初始化 ---
+        self._init_prompts()
+    
+    def _init_prompts(self):
+        self.main_prompt = PromptTemplate.from_template(
+            """你是一位頂級的 AI 技術文件分析師。你的任務是嚴格基於下面提供的「上下文資料」，深入地回答「使用者當前問題」。
 
 **執行流程與規則：**
-
 1.  **深入分析上下文**：首先，仔細閱讀並完全理解「上下文資料」中與「使用者當前問題」相關的所有片段。
-2.  **組織與回答**：
-    *   **如果「上下文資料」中包含回答問題所需的資訊**，你的任務是【授權並鼓勵】你使用自己的語言能力，對這些碎片化的資訊進行**總結、推理、和重新組織**，以形成一個連貫、清晰、專業的回答。你的回答應該看起來像是該領域專家寫的，而不僅僅是原文的複製。
-    *   **如果「上下文資料」完全沒有提及問題的核心主題**，那麼你【必須】只回答：「根據我所掌握的資料，我找不到關於 '{question}' 的確切資訊。」
-3.  **定義「幻覺」禁區**：你【絕對禁止】引入任何**在「上下文資料」中完全不存在的、憑空捏造的事實或數據**。例如，如果上下文沒有提到版本號，你就不能自己編一個版本號。你的所有核心論點都必須源於上下文。
-4.  **思考過程**：在最終答案前，你可以使用 <think>...</think> 標籤來寫下你的分析、推理和判斷過程。
+2.  **组织与回答**：
+    *   如果「上下文資料」中包含回答問題所需的資訊，你的任務是【授權並鼓勵】你使用自己的語言能力，對這些碎片化的資訊進行**總結、推理、和重新組織**，以形成一個連貫、清晰、專業的回答。
+    *   如果「上下文資料」完全沒有提及問題的核心主題，那麼你【必須】只回答：「根據我所掌握的資料，我找不到關於 '{question}' 的確切資訊。」
+3.  **定义“幻觉”禁区**：你【絕對禁止】引入任何**在「上下文資料」中完全不存在的、憑空捏造的事實或數據**。
+4.  **思考過程**：在最终答案前，你可以使用 <think>...</think> 標籤来写下你的分析、推理和判断过程。
+5.  **【格式要求】**: `<think>` 區塊必須以 `</think>` 結束，且 `</think>` 標籤之後【必須立刻】开始你的最终回答，中间不能有任何换行或多余的空格。
 
 ---
 [上下文資料]:
 {context}
 ---
-
 [使用者當前問題]: {question}
-
-你的回答:""",
-            input_variables=["context", "question"]
+你的回答:"""
         )
-        
-        self.summarizer_prompt = PromptTemplate(
-            template="請將以下提供的文字內容總結成一段簡潔、流暢的摘要，保留其核心資訊。文字內容如下：\n\n---\n{text_to_summarize}\n---\n\n摘要:",
-            input_variables=["text_to_summarize"]
+        self.query_expansion_prompt = PromptTemplate.from_template(
+            "你是一個查詢優化助理。請根據使用者提供的原始查詢，生成一個更具體、更可能在技術文件中找到相關內容的擴充查詢。請只返回擴充後的查詢，不要添加任何解釋。\n\n[原始查詢]: {original_query}\n\n[擴充查詢]:"
         )
+        self.router_prompt = PromptTemplate.from_template(
+            """你是一個任務路由器。根據使用者的問題，判斷它屬於哪一種類型。請只回答以下分類中的一個：'rag_query' 或 'general_conversation'。
 
-        self.query_expansion_prompt = PromptTemplate(
-            template="""你是一個查詢優化助理。請根據使用者提供的原始查詢，生成一個或多個更具體、更可能在技術文件中找到相關內容的擴充查詢。請只返回擴充後的查詢，不要添加任何解釋。
+- 如果問題需要查找、解釋、比較或定義特定資訊，特別是技術術語，請回答 'rag_query'。
+- 如果問題是簡單的問候、閒聊或與知識庫無關的對話，請回答 'general_conversation'。
 
-[原始查詢]: {original_query}
-
-[擴充查詢]:""",
-            input_variables=["original_query"]
+[使用者問題]: {question}
+[分類]:"""
         )
 
     def set_llm_model(self, model_name: str):
@@ -120,6 +117,35 @@ class ConversationalRAG:
         self.use_scraper = enabled
         return True
 
+    def update_ensemble_retriever(self):
+        print("🔄 正在更新 Ensemble Retriever...")
+        try:
+            all_data = self.vector_db.get(include=["documents", "metadatas"])
+            
+            documents_content = all_data['documents']
+            metadatas = all_data['metadatas']
+
+            all_docs = [
+                Document(page_content=documents_content[i], metadata=metadatas[i])
+                for i in range(len(documents_content))
+                if documents_content[i] != "start"
+            ]
+            
+            if not all_docs:
+                print("   -> 資料庫文檔不足，僅使用向量檢索器。")
+                self.ensemble_retriever = self.vector_retriever
+                return
+
+            bm25_retriever = BM25Retriever.from_documents(all_docs, k=5)
+            self.ensemble_retriever = EnsembleRetriever(
+                retrievers=[bm25_retriever, self.vector_retriever],
+                weights=[0.5, 0.5]
+            )
+            print("✅ 混合檢索器已更新。")
+        except Exception as e:
+            print(f"❌ 更新混合檢索器失敗: {e}。將退回至僅使用向量檢索器。")
+            self.ensemble_retriever = self.vector_retriever
+            
     def add_document(self, file_path: str):
         print(f"📄 正在處理新文件: {file_path}")
         loader = UnstructuredFileLoader(file_path)
@@ -128,6 +154,7 @@ class ConversationalRAG:
         splits = text_splitter.split_documents(docs)
         self.vector_db.add_documents(splits)
         print(f"✅ 文件 '{os.path.basename(file_path)}' 已成功加入資料庫。")
+        self.update_ensemble_retriever()
         if os.path.exists(file_path):
             os.remove(file_path)
 
@@ -138,8 +165,7 @@ class ConversationalRAG:
             response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'html.parser')
-            for element in soup(['script', 'style', 'nav', 'footer', 'aside']):
-                element.decompose()
+            for element in soup(['script', 'style', 'nav', 'footer', 'aside']): element.decompose()
             text = '\n'.join(line.strip() for line in soup.get_text().splitlines() if line.strip())
             print(f"✅ (爬蟲) 成功獲取網頁文字，長度: {len(text)} 字元。")
             return text[:4000]
@@ -148,110 +174,88 @@ class ConversationalRAG:
             return f"無法爬取網址，錯誤: {e}"
             
     def _search_wikipedia(self, query: str):
-        print(f"🔍 (外部) 正在從維基百科搜尋 '{query}'...")
+        print(f"🔍 (維基百科) 正在搜尋: '{query[:50].strip()}...'")
         try:
             wikipedia.set_lang("zh-tw")
-            suggestion = wikipedia.suggest(query)
-            search_query = suggestion if suggestion else query
-            summary = wikipedia.summary(search_query, sentences=5)
-            print(f"✅ (外部) 找到維基百科摘要。")
+
+            summary = wikipedia.summary(query, sentences=5, auto_suggest=False)
+            print(f"✅ (維基百科) 找到摘要。")
             return summary
         except wikipedia.exceptions.PageError:
             return "無相關資料"
         except Exception as e:
-            print(f"❌ (外部) 維基百科查詢時發生錯誤: {e}")
+            print(f"❌ (維基百科) 查詢時發生錯誤: {e}")
             return "查詢時發生錯誤"
 
-    def _summarize_text(self, text: str) -> str:
-        print(f"📝 (內部) 正在總結文字，原始長度: {len(text)}")
-        try:
-            prompt_value = self.summarizer_prompt.format(text_to_summarize=text)
-            summary = self.llm.invoke(prompt_value)
-            print(f"✅ (內部) 總結完成，新長度: {len(summary)}")
-            return summary
-        except Exception as e:
-            print(f"❌ (內部) 總結時發生錯誤: {e}")
-            return text[:self.history_summary_threshold]
-
-    def ask(self, question: str, stream: bool = False):
-        print(f"\n🤔 收到請求，問題: '{question}'")
-
-        print("💡 正在進行查詢擴展...")
-        try:
-            expansion_prompt_value = self.query_expansion_prompt.format(original_query=question)
-            expanded_query = self.llm.invoke(expansion_prompt_value).strip()
-            print(f"   -> 擴展後查詢: '{expanded_query}'")
-            retrieval_query = f"{question}\n{expanded_query}"
-        except Exception as e:
-            print(f"   -> 查詢擴展失敗: {e}，將使用原始查詢。")
-            retrieval_query = question
-
+    def _get_rag_context(self, question: str, retrieval_query: str):
+        all_source_docs = []
         context_parts = []
-        retrieved_docs = []
 
-        # 網頁內容
+        # 1. 網頁爬蟲
         if self.use_scraper:
             url_match = re.search(r'https?://[\S]+', question)
             if url_match:
                 url = url_match.group(0)
-                web_context = self._scrape_webpage_text(url)
-                if "無法爬取" not in web_context:
-                    context_parts.append(f"來源：網頁內容 ({url})\n內容：\n{web_context}")
-        
-        # 維基百科內容
+                web_content = self._scrape_webpage_text(url)
+                if "無法爬取" not in web_content:
+                    web_doc = Document(page_content=web_content, metadata={"source": f"網頁: {url}"})
+                    all_source_docs.append(web_doc)
+                    context_parts.append(f"來源：{web_doc.metadata['source']}\n內容：\n{web_doc.page_content}")
         if self.use_wikipedia:
-            wiki_context = self._search_wikipedia(retrieval_query)
-            if wiki_context not in ["無相關資料", "查詢時發生錯誤"]:
-                context_parts.append(f"來源：維基百科\n內容：\n{wiki_context}")
-        
-        # 歷史對話與文件內容
-        if self.use_history:
-            print(f"🔍 (內部) 正在使用查詢 '{retrieval_query[:50]}...' 進行檢索...")
-            docs_from_db = self.retriever.get_relevant_documents(retrieval_query)
-            docs_from_db = [doc for doc in docs_from_db if doc.page_content != "start"]
-            
-            if docs_from_db:
-                key_term_match = re.search(r'(_[A-Z0-9]{2,4}\b)', question)
-                if key_term_match:
-                    key_term = key_term_match.group(1)
-                    print(f"   -> 正在過濾結果，要求必須包含關鍵詞 '{key_term}'...")
-                    filtered_docs = [doc for doc in docs_from_db if key_term in doc.page_content]
-                    if filtered_docs:
-                        docs_from_db = filtered_docs
-                
-                retrieved_docs = docs_from_db # 更新用於顯示來源的變數
-                context_from_docs = "\n---\n".join([f"來源：{doc.metadata.get('source', '未知')}\n內容：\n{doc.page_content}" for doc in docs_from_db])
-                
-                if len(context_from_docs) > self.history_summary_threshold:
-                    print(f"ⓘ (內部) 上下文過長 ({len(context_from_docs)} 字元)，正在進行總結...")
-                    summarized_context = self._summarize_text(context_from_docs)
-                    context_parts.append(f"[總結後的相關資料]:\n{summarized_context}")
-                else:
-                    context_parts.append(f"[相關資料庫內容]:\n{context_from_docs}")
-        
-        # 組合所有上下文
-        final_context = "\n\n".join(context_parts)
-        if not final_context:
-            final_context = "沒有可用的上下文資料。"
+            short_query = question
+            wiki_content = self._search_wikipedia(short_query)
+            if wiki_content not in ["無相關資料", "查詢時發生錯誤"]:
+                wiki_doc = Document(page_content=wiki_content, metadata={"source": "維基百科"})
+                all_source_docs.append(wiki_doc)
+                context_parts.append(f"來源：{wiki_doc.metadata['source']}\n內容：\n{wiki_doc.page_content}")
 
-        print("📝 正在組合 Prompt...")
-        formatted_prompt = self.main_prompt.format(
-            context=final_context,
-            question=question
-        )
+        if self.use_history:
+            print(f"🔍 (混合檢索) 正在檢索: '{retrieval_query[:80].replace('\n', ' ')}...'")
+            db_docs = self.ensemble_retriever.get_relevant_documents(retrieval_query)
+            db_docs = [doc for doc in db_docs if hasattr(doc, 'page_content') and doc.page_content != "start"]
+            
+            if db_docs:
+                all_source_docs.extend(db_docs)
+                context_from_docs = "\n---\n".join([f"來源：{doc.metadata.get('source', '未知')}\n內容：\n{doc.page_content}" for doc in db_docs])
+                context_parts.append(f"[相關資料庫內容]:\n{context_from_docs}")
         
-        print(f"🤖 正在使用模型 '{self.current_llm_model}' 生成回答...")
-        if stream:
-            return self.stream_and_save(question, formatted_prompt, retrieved_docs)
-        else:
+        final_context = "\n\n".join(context_parts) if context_parts else "沒有可用的上下文資料。"
+        return final_context, all_source_docs
+
+    def ask(self, question: str, stream: bool = True):
+        print(f"\n🤔 收到請求，問題: '{question}'")
+
+        router_chain = self.router_prompt | self.llm | StrOutputParser()
+        try:
+            route = router_chain.invoke({"question": question}).strip().lower()
+            print(f"🚦 路由器決策: {route}")
+        except Exception as e:
+            print(f"🚦 路由器決策失敗: {e}, 將走預設 RAG 路徑。")
+            route = 'rag_query'
+
+        if 'rag_query' in route:
             try:
-                answer = self.llm.invoke(formatted_prompt)
-                self.save_qa(question, answer)
-                return answer
+                query_chain = self.query_expansion_prompt | self.llm | StrOutputParser()
+                raw_expanded_output = query_chain.invoke({"original_query": question})
+                match = re.search(r'\[擴充查詢\]:\s*([\s\S]*)', raw_expanded_output, re.IGNORECASE)
+                if match:
+                    expanded_query = match.group(1).strip()
+                else:
+                    expanded_query = re.sub(r'<think>.*?</think>', '', raw_expanded_output, flags=re.DOTALL).strip()
+                if not expanded_query:
+                    expanded_query = question
+                retrieval_query = f"{question}\n{expanded_query}"
+                print(f"💡 清理後的擴展查詢: {expanded_query}")
             except Exception as e:
-                error_msg = f"抱歉，處理您的請求時發生錯誤: {e}"
-                print(f"❌ 在非串流生成過程中發生錯誤: {e}")
-                return error_msg
+                print(f"💡 查詢擴展失敗: {e}, 使用原始查詢。")
+                retrieval_query = question
+
+            final_context, all_source_docs = self._get_rag_context(question, retrieval_query)
+            formatted_prompt = self.main_prompt.format(context=final_context, question=question)
+            return self.stream_and_save(question, formatted_prompt, all_source_docs)
+        else:
+            print("💬 走通用對話路徑...")
+            return self.stream_and_save(question, question, [])
 
     def stream_and_save(self, question, prompt, source_documents):
         full_answer = ""
@@ -262,23 +266,19 @@ class ConversationalRAG:
 
             for chunk in self.llm.stream(prompt):
                 full_answer += chunk
-                response_chunk = {"type": "content", "content": chunk, "error": None}
-                yield f"data: {json.dumps(response_chunk)}\n\n"
+                yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
             
-            print("💾 正在儲存本次問答...")
             self.save_qa(question, full_answer)
-
         except Exception as e:
             error_msg = f"抱歉，處理您的請求時發生錯誤: {e}"
             print(f"❌ 在串流生成過程中發生錯誤: {e}")
-            response_chunk = {"type": "error", "error": error_msg}
-            yield f"data: {json.dumps(response_chunk)}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'error': error_msg})}\n\n"
         
         finally:
             yield f"data: [DONE]\n\n"
 
     def save_qa(self, question, answer):
-        if not answer or answer.strip() == "":
+        if not answer or not answer.strip():
             print("   -> 偵測到空回答，跳過儲存。")
             return
             
