@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>本地端 LLM RAG 整合介面</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
+
         :root {
             --bg-color: #121212; --primary-text: #e0e0e0; --secondary-text: #b0b0b0;
             --surface-color: #1e1e1e; --border-color: #333; --accent-color: #8257E5;
@@ -44,24 +47,29 @@
         .toggle-input:focus + .toggle-label .slider { box-shadow: 0 0 1px var(--success-color); }
         #chat-container { display: flex; flex-direction: column; height: 80vh; background-color: var(--surface-color); border-radius: 8px; overflow: hidden; border: 1px solid var(--border-color);}
         #chat-box { flex-grow: 1; padding: 1rem; overflow-y: auto; }
-        .message { margin-bottom: 1rem; display: flex; flex-direction: column; }
-        .bot-message { align-items: flex-start; }
-        .user-message { align-items: flex-end; }
-        .message .content { max-width: 80%; padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
+        .message { display: flex; margin-bottom: 1rem; }
+        .user-message { justify-content: flex-end; }
+        .bot-message { justify-content: flex-start; }
+        .message-wrapper { display: flex; flex-direction: column; max-width: 80%; }
+        .user-message .message-wrapper { align-items: flex-end; }
+        .bot-message .message-wrapper { align-items: flex-start; }
+        .message .content { padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
         .user-message .content { background-color: var(--accent-color); color: white; border-bottom-right-radius: 2px; }
-        .bot-message .content { background-color: #363636; color: var(--primary-text); border-bottom-left-radius: 2px; }
+        .bot-message .content { background-color: #363636; color: var(--primary-text); border-bottom-left-radius: 2px; min-height: 1.6em;}
+        .sources-container { margin-bottom: 0.5rem; padding-left: 0.5rem; }
+        .sources-container h4 { margin: 0 0 0.5rem 0; font-size: 0.9em; color: var(--secondary-text); display: flex; align-items: center; gap: 0.5rem; }
+        .sources-container h4::before { content: '📚'; }
+        .source-item { background-color: rgba(255, 255, 255, 0.08); padding: 0.4rem 0.8rem; border-radius: 15px; font-size: 0.8em; margin-bottom: 0.5rem; cursor: pointer; border: 1px solid var(--border-color); display: inline-block; margin-right: 0.5rem; transition: all 0.2s; }
+        .source-item:hover { background-color: rgba(255, 255, 255, 0.15); border-color: var(--info-color); }
+        .source-content-container { display: none; margin-top: 0.5rem; padding: 0.5rem; background-color: rgba(0,0,0,0.3); border-radius: 5px; width: 100%; box-sizing: border-box;}
+        .source-content { border-left: 2px solid #555; padding: 0.5rem; margin-bottom: 0.5rem; white-space: pre-wrap; max-height: 150px; overflow-y: auto; color: var(--secondary-text); }
+        .source-content:last-child { margin-bottom: 0; }
+        mark { background-color: #e6e676; color: #000; padding: 0 2px; border-radius: 2px; }
         #chat-form { display: flex; padding: 1rem; border-top: 1px solid var(--border-color); gap: 0.5rem; }
         #chat-input { flex-grow: 1; padding: 0.75rem; border: 1px solid #444; border-radius: 5px; background-color: #2c2c2c; color: white; font-size: 1rem; resize: none; max-height: 150px; overflow-y: auto; }
         #chat-submit { padding: 0.5rem; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 5px; background-color: var(--accent-color); color: white; cursor: pointer; flex-shrink: 0; }
         #chat-submit:hover { background-color: var(--accent-hover); }
         #chat-submit:disabled { background-color: #555; cursor: not-allowed; }
-        .sources-container { border-top: 1px dashed var(--border-color); margin: 1rem 0; padding-top: 1rem; max-width: 80%; }
-        .sources-container h4 { margin: 0 0 0.5rem 0; font-size: 0.9em; color: var(--secondary-text); }
-        .source-item { background-color: rgba(255, 255, 255, 0.05); padding: 0.5rem; border-radius: 4px; font-size: 0.8em; margin-bottom: 0.5rem; cursor: pointer; border-left: 3px solid var(--info-color); }
-        .source-item:hover { background-color: rgba(255, 255, 255, 0.1); }
-        .source-content-container { display: none; margin-top: 0.5rem; }
-        .source-content { background-color: rgba(0,0,0,0.2); padding: 0.5rem; border-radius: 4px; white-space: pre-wrap; max-height: 150px; overflow-y: auto; color: var(--secondary-text); border-left: 2px solid #555; margin-bottom: 0.5rem; }
-        mark { background-color: #e6e676; color: #000; padding: 0 2px; border-radius: 2px; }
         .upload-container { margin-bottom: 2rem; padding: 1rem; border: 1px dashed var(--border-color); border-radius: 5px; text-align: center; }
         .upload-label { font-size: 0.9em; color: var(--secondary-text); margin-bottom: 1rem; display: block; }
         #file-upload { display: block; margin: 0 auto 1rem auto; }
@@ -77,10 +85,14 @@
         .delete-btn:hover { background-color: var(--danger-hover); }
         .loading { text-align: center; padding: 20px; font-size: 18px; }
         .record-id { font-family: monospace; color: #888; font-size: 12px; }
-        .thinking-block { background-color: rgba(255, 255, 255, 0.05); border-left: 3px solid var(--accent-color); margin-top: 1rem; padding: 0.5rem 1rem; border-radius: 4px; max-width: 80%; }
+        .thinking-block { margin-top: 0.5rem; background-color: rgba(255, 255, 255, 0.05); border-left: 3px solid var(--accent-color); padding: 0.5rem 1rem; border-radius: 4px; }
         .toggle-think { background: none; border: none; color: var(--secondary-text); cursor: pointer; padding: 0; font-size: 0.9em; text-decoration: underline; }
         .thinking-content { display: none; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed var(--border-color); white-space: pre-wrap; color: #ccc; }
         .thinking-content.visible { display: block; }
+        .bot-message .content h1, .bot-message .content h2, .bot-message .content h3 { margin-top: 1em; margin-bottom: 0.5em; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
+        .bot-message .content ul, .bot-message .content ol { padding-left: 2em; }
+        .bot-message .content pre { background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word; }
+        .bot-message .content code { background-color: rgba(255,255,255,0.1); padding: 2px 4px; border-radius: 3px; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -98,7 +110,9 @@
                 <div id="chat-container">
                     <div id="chat-box">
                         <div class="message bot-message">
-                            <div class="content">你好！我是您的 RAG 助理。您可以從右側面板選擇模型、設定功能或上傳文件來開始對話。</div>
+                            <div class="message-wrapper">
+                                <div class="content">你好！我是您的 RAG 助理。您可以從右側面板選擇模型、設定功能或上傳文件來開始對話。</div>
+                            </div>
                         </div>
                     </div>
                     <div id="chat-form">
@@ -175,11 +189,12 @@
     </div>
 
     <script>
-        // Global Vars
+        // --- Global Vars ---
         let chatBox, chatInput, submitButton, modelSelector, modelStatus, clearChatBtn;
         let historyToggle, wikipediaToggle, scraperToggle;
         let uploadBtn, fileInput, uploadStatus;
 
+        // --- Init Function ---
         document.addEventListener('DOMContentLoaded', () => {
             // Get all elements
             chatBox = document.getElementById('chat-box');
@@ -196,9 +211,9 @@
             uploadStatus = document.getElementById('upload-status');
             
             // Add event listeners
-            historyToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_history'));
-            wikipediaToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_wikipedia'));
-            scraperToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_scraper'));
+            historyToggle.addEventListener('change', () => handleToggleChange(historyToggle, '/api/set_history'));
+            wikipediaToggle.addEventListener('change', () => handleToggleChange(wikipediaToggle, '/api/set_wikipedia'));
+            scraperToggle.addEventListener('change', () => handleToggleChange(scraperToggle, '/api/set_scraper'));
             modelSelector.addEventListener('change', handleModelChange);
             clearChatBtn.addEventListener('click', handleClearChat);
             uploadBtn.addEventListener('click', handleFileUpload);
@@ -212,26 +227,22 @@
             openPanelTab({ currentTarget: document.querySelector('.panel-tab-button') }, 'settings');
         });
 
-        // --- JS Functions ---
         async function loadModelsAndSettings() {
             try {
                 const response = await fetch('/api/models');
                 if (!response.ok) throw new Error(`無法獲取模型: ${response.statusText}`);
                 const data = await response.json();
-                
-                const models = data.models;
-                const currentModel = data.current_model;
                 modelSelector.innerHTML = '';
-                if (!models || models.length === 0) {
+                if (!data.models || data.models.length === 0) {
                     modelSelector.innerHTML = '<option>無可用模型</option>';
                     modelSelector.disabled = true;
                     submitButton.disabled = true;
                 } else {
-                    models.forEach(model => {
+                    data.models.forEach(model => {
                         const option = new Option(model, model);
-                        if (model === currentModel) {
+                        if (model === data.current_model) {
                             option.selected = true;
-                            modelStatus.textContent = `當前: ${currentModel.split(':')[0]}`;
+                            modelStatus.textContent = `當前: ${data.current_model.split(':')[0]}`;
                         }
                         modelSelector.appendChild(option);
                     });
@@ -248,7 +259,6 @@
                 submitButton.disabled = true;
             }
         }
-
         async function handleToggleChange(toggleElement, apiUrl) {
             try {
                 const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: toggleElement.checked }) });
@@ -258,21 +268,17 @@
                 toggleElement.checked = !toggleElement.checked;
             }
         }
-
         async function handleModelChange(event) {
             const selectedModel = event.target.value;
             modelStatus.textContent = `切換中...`;
-            modelStatus.style.color = "var(--secondary-text)";
             try {
                 const response = await fetch('/api/set_model', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: selectedModel }) });
-                if (!response.ok) throw new Error('伺服器切換模型失敗');
                 const result = await response.json();
-                if (result.success) {
+                if (response.ok && result.success) {
                     modelStatus.textContent = `當前: ${selectedModel.split(':')[0]} ✅`;
                     modelStatus.style.color = "var(--success-color)";
                 } else { throw new Error(result.error || '未知錯誤'); }
             } catch (error) {
-                console.error('切換模型請求失敗:', error);
                 modelStatus.textContent = `切換失敗`;
                 modelStatus.style.color = "var(--danger-color)";
             }
@@ -281,23 +287,17 @@
                  modelStatus.style.color = "var(--secondary-text)";
             }, 4000);
         }
-
         function handleClearChat() {
-            if (!confirm('您確定要清除目前視窗中的對話嗎？')) return;
-            chatBox.innerHTML = `<div class="message bot-message"><div class="content">你好！我是您的 RAG 助理。您可以從右側面板選擇模型、設定功能或上傳文件來開始對話。</div></div>`;
+            if (confirm('您確定要清除目前視窗中的對話嗎？')) {
+                chatBox.innerHTML = `<div class="message bot-message"><div class="message-wrapper"><div class="content">你好！我是您的 RAG 助理。您可以從右側面板選擇模型、設定功能或上傳文件來開始對話。</div></div></div>`;
+            }
         }
-        
         async function handleFileUpload() {
             const file = fileInput.files[0];
-            if (!file) {
-                uploadStatus.textContent = "請先選取一個檔案。";
-                uploadStatus.style.color = "var(--danger-color)";
-                return;
-            }
+            if (!file) { uploadStatus.textContent = "請先選取一個檔案。"; return; }
             const formData = new FormData();
             formData.append('file', file);
-            uploadStatus.textContent = `正在上傳並處理 ${file.name}...`;
-            uploadStatus.style.color = "var(--info-color)";
+            uploadStatus.textContent = `正在上傳 ${file.name}...`;
             uploadBtn.disabled = true;
             try {
                 const response = await fetch('/api/upload_document', { method: 'POST', body: formData });
@@ -305,12 +305,8 @@
                 if (response.ok && result.success) {
                     uploadStatus.textContent = result.message;
                     uploadStatus.style.color = "var(--success-color)";
-                    if (document.getElementById('db-manager').classList.contains('active')) {
-                        fetchRecords();
-                    }
-                } else {
-                    throw new Error(result.error || '上傳失敗');
-                }
+                    if (document.getElementById('db-manager').classList.contains('active')) fetchRecords();
+                } else { throw new Error(result.error || '上傳失敗'); }
             } catch (error) {
                 uploadStatus.textContent = `錯誤: ${error.message}`;
                 uploadStatus.style.color = "var(--danger-color)";
@@ -319,7 +315,6 @@
                 fileInput.value = '';
             }
         }
-
         function openPanelTab(evt, tabName) {
             let i, tabcontent, tablinks;
             tabcontent = document.getElementsByClassName("panel-tab-content");
@@ -329,56 +324,48 @@
             document.getElementById(tabName).style.display = "block";
             evt.currentTarget.className += " active";
             if (tabName === 'db-manager') {
-                if (!window.dbManagerInitialized) {
-                    initDbManager();
-                    window.dbManagerInitialized = true;
-                } else { fetchRecords(); }
+                if (!window.dbManagerInitialized) { initDbManager(); window.dbManagerInitialized = true; } 
+                else { fetchRecords(); }
             }
         }
-
         function appendMessage(text, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}-message`;
             const messageWrapper = document.createElement('div');
-            messageWrapper.className = `message ${sender}-message`;
+            messageWrapper.className = 'message-wrapper';
             const contentDiv = document.createElement('div');
             contentDiv.className = 'content';
             if (sender === 'user') {
                 contentDiv.textContent = text;
             }
             messageWrapper.appendChild(contentDiv);
-            chatBox.appendChild(messageWrapper);
+            messageDiv.appendChild(messageWrapper);
+            chatBox.appendChild(messageDiv);
             chatBox.scrollTop = chatBox.scrollHeight;
             return messageWrapper;
         }
-        
         function appendSources(messageWrapper, sources, userQuestion) {
             let sourcesContainer = messageWrapper.querySelector('.sources-container');
             if (sourcesContainer) return;
             sourcesContainer = document.createElement('div');
             sourcesContainer.className = 'sources-container';
             const title = document.createElement('h4');
-            title.textContent = '📚 參考來源：';
             sourcesContainer.appendChild(title);
-            
             const groupedSources = {};
             sources.forEach(source => {
                 let displayName = source.metadata.source.split(/[\\/]/).pop();
                 if (displayName === 'conversation' && source.metadata.timestamp) {
                     displayName = `歷史對話 (${source.metadata.timestamp})`;
                 }
-                if (!groupedSources[displayName]) {
-                    groupedSources[displayName] = [];
-                }
+                if (!groupedSources[displayName]) groupedSources[displayName] = [];
                 groupedSources[displayName].push(source.page_content);
             });
-
             const keywords = userQuestion.split(/\s+/).filter(word => word.length > 2 && !/^[a-zA-Z0-9-_]+$/.test(word));
             const regex = keywords.length > 0 ? new RegExp(`(${keywords.join('|')})`, 'gi') : null;
-
             for (const [displayName, contents] of Object.entries(groupedSources)) {
                 const sourceItem = document.createElement('div');
                 sourceItem.className = 'source-item';
                 sourceItem.textContent = `來源: ${displayName}`;
-                
                 sourceItem.addEventListener('click', () => {
                     let contentContainer = sourceItem.querySelector('.source-content-container');
                     if (!contentContainer) {
@@ -388,9 +375,7 @@
                             const contentDiv = document.createElement('div');
                             contentDiv.className = 'source-content';
                             let highlightedContent = escapeHtml(content);
-                            if (regex) {
-                                highlightedContent = highlightedContent.replace(regex, `<mark>$1</mark>`);
-                            }
+                            if (regex) highlightedContent = highlightedContent.replace(regex, `<mark>$1</mark>`);
                             contentDiv.innerHTML = highlightedContent;
                             contentContainer.appendChild(contentDiv);
                         });
@@ -400,78 +385,114 @@
                 });
                 sourcesContainer.appendChild(sourceItem);
             }
-            messageWrapper.insertBefore(sourcesContainer, messageWrapper.querySelector('.content'));
+            messageWrapper.insertBefore(sourcesContainer, messageWrapper.firstChild);
         }
-
         async function sendMessage() {
-            const question = chatInput.value.trim();
-            if (!question) return;
-            appendMessage(question, 'user');
-            chatInput.value = '';
-            chatInput.style.height = 'auto';
-            submitButton.disabled = true;
-            const botMessageWrapper = appendMessage('', 'bot');
-            const botContentDiv = botMessageWrapper.querySelector('.content');
-            let fullBotResponse = '';
-            try {
-                const eventSource = new EventSource(`/ask?question=${encodeURIComponent(question)}`);
-                eventSource.onmessage = function(event) {
-                    if (event.data === '[DONE]') {
-                        eventSource.close();
-                        submitButton.disabled = false;
-                        if (fullBotResponse.includes('<think>')) {
-                            const thinkMatch = /<think>([\s\S]*)<\/think>([\s\S]*)/.exec(fullBotResponse);
-                            if (thinkMatch) {
-                                const thinkContent = thinkMatch[1].trim();
-                                const mainContent = thinkMatch[2].trim();
-                                const thinkBlock = document.createElement('div');
-                                thinkBlock.className = 'thinking-block';
-                                thinkBlock.innerHTML = `<button class='toggle-think' onclick='toggleThink(this)'>顯示/隱藏思考過程</button><div class='thinking-content'>${escapeHtml(thinkContent)}</div>`;
-                                botMessageWrapper.insertBefore(thinkBlock, botContentDiv);
-                                botContentDiv.textContent = mainContent;
-                            }
-                        }
-                        return;
-                    }
+  const question = chatInput.value.trim();
+        if (!question) return;
 
-                    const data = JSON.parse(event.data);
-                    
-                    if (data.type === 'sources') {
-                        appendSources(botMessageWrapper, data.data, question);
-                    } else if (data.type === 'content' && data.content) {
-                        fullBotResponse += data.content;
-                        botContentDiv.textContent = fullBotResponse;
-                    } else if (data.type === 'error' || data.error) {
-                        botContentDiv.innerHTML += `<p style="color:var(--danger-color)">[錯誤]：${escapeHtml(data.error)}</p>`;
-                        eventSource.close();
-                        submitButton.disabled = false;
-                    }
-                    chatBox.scrollTop = chatBox.scrollHeight;
-                };
-                eventSource.onerror = function(err) {
-                    botContentDiv.innerHTML += `<p style="color:var(--danger-color)">[錯誤]：無法連接到伺服器。</p>`;
+        appendMessage(question, 'user');
+        chatInput.value = '';
+        chatInput.style.height = 'auto';
+        submitButton.disabled = true;
+
+        const botMessageWrapper = appendMessage('', 'bot');
+        const thinkBlock = document.createElement('div');
+        thinkBlock.className = 'thinking-block';
+        thinkBlock.style.display = 'none';
+        thinkBlock.innerHTML = `<button class='toggle-think' onclick='toggleThink(this)'>顯示/隱藏思考過程</button><div class='thinking-content'></div>`;
+        
+        const botContentDiv = botMessageWrapper.querySelector('.content');
+        botMessageWrapper.insertBefore(thinkBlock, botContentDiv);
+        const thinkContentDiv = thinkBlock.querySelector('.thinking-content');
+
+        let fullBotResponse = '';
+        let animationFrameId = null;
+
+        const render = () => {
+            const thinkStartIndex = fullBotResponse.indexOf('<think>');
+            const thinkEndIndex = fullBotResponse.indexOf('</think>'); 
+
+            let thinkText = '';
+            let answerText = '';
+
+            if (thinkStartIndex !== -1) {
+                thinkBlock.style.display = 'block';
+                if (thinkEndIndex !== -1 && thinkEndIndex > thinkStartIndex) {
+                    thinkText = fullBotResponse.substring(thinkStartIndex + 7, thinkEndIndex);
+                    answerText = fullBotResponse.substring(thinkEndIndex + 8);
+                } else {
+                    thinkText = fullBotResponse.substring(thinkStartIndex + 7);
+                }
+            } else {
+                answerText = fullBotResponse;
+            }
+            
+            thinkContentDiv.textContent = thinkText.trimStart();
+            botContentDiv.textContent = answerText.trimStart();
+            
+            chatBox.scrollTop = chatBox.scrollHeight;
+            animationFrameId = null;
+        };
+
+        try {
+            const eventSource = new EventSource(`/ask?question=${encodeURIComponent(question)}`);
+            
+            eventSource.onmessage = function(event) {
+                if (event.data === '[DONE]') {
                     eventSource.close();
                     submitButton.disabled = false;
-                };
-            } catch (error) {
-                console.error('Error:', error);
-                botContentDiv.textContent = "[發生錯誤，請查看主控台]";
+                    
+                    const finalText = botContentDiv.textContent;
+                    if (finalText) {
+                        botContentDiv.innerHTML = marked.parse(finalText);
+                    }
+                    
+                    if (animationFrameId) {
+                        cancelAnimationFrame(animationFrameId);
+                        render();
+                    }
+                    return;
+                }
+
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'sources') {
+                    appendSources(botMessageWrapper, data.data, question);
+                } else if (data.type === 'content' && data.content) {
+                    fullBotResponse += data.content;
+                    if (!animationFrameId) {
+                        animationFrameId = requestAnimationFrame(render);
+                    }
+                } else if (data.type === 'error' || data.error) {
+                    botContentDiv.innerHTML += `<p style="color:var(--danger-color)">[錯誤]：${escapeHtml(data.error)}</p>`;
+                    eventSource.close();
+                    submitButton.disabled = false;
+                }
+            };
+
+            eventSource.onerror = function(err) {
+                console.error("EventSource failed:", err);
+                botContentDiv.innerHTML += `<p style="color:var(--danger-color)">[錯誤]：無法連接到伺服器。</p>`;
+                eventSource.close();
                 submitButton.disabled = false;
-            }
+            };
+        } catch (error) {
+            console.error('Error:', error);
+            botContentDiv.textContent = "[發生錯誤，請查看主控台]";
+            submitButton.disabled = false;
         }
-        
+    }
         function toggleThink(buttonElement) {
             const content = buttonElement.nextElementSibling;
             if (content) content.classList.toggle('visible');
         }
-
         function handleEnter(event) {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
                 sendMessage();
             }
         }
-        
         let allRecords = [];
         function initDbManager() {
             fetchRecords();
@@ -480,7 +501,6 @@
                 renderTable(allRecords.filter(record => record.content.toLowerCase().includes(searchTerm)));
             });
         }
-        
         async function fetchRecords() {
             const loadingDiv = document.getElementById('loading');
             const tableBody = document.getElementById('recordTableBody');
@@ -489,17 +509,16 @@
             document.getElementById('searchBox').value = '';
             try {
                 const response = await fetch('/api/records');
-                if (!response.ok) throw new Error('無法獲取資料');
+                if (!response.ok) throw new Error('無法取得資料');
                 allRecords = await response.json();
                 renderTable(allRecords);
             } catch (error) {
-                console.error('獲取紀錄失敗:', error);
-                loadingDiv.innerText = '獲取紀錄失敗。';
+                console.error('取得紀錄失敗:', error);
+                loadingDiv.innerText = '取得紀錄失敗。';
             } finally {
                 loadingDiv.style.display = 'none';
             }
         }
-        
         function renderTable(records) {
             const tableBody = document.getElementById('recordTableBody');
             document.getElementById('recordCount').innerText = `總共有 ${records.length} 筆紀錄`;
@@ -519,23 +538,21 @@
             });
             document.querySelectorAll('.delete-btn').forEach(button => button.addEventListener('click', handleDelete));
         }
-        
         async function handleDelete(event) {
             const docId = event.target.dataset.id;
-            if (!confirm(`確定要永久刪除 ID 為 "${docId}" 的這筆紀錄嗎？`)) return;
-            try {
-                const response = await fetch('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: docId }) });
-                const result = await response.json();
-                if (result.success) {
-                    alert('刪除成功！');
-                    fetchRecords();
-                } else { alert('刪除失敗: ' + result.error); }
-            } catch (error) {
-                console.error('刪除請求失敗:', error);
-                alert('刪除請求失敗。');
+            if (confirm(`確定要永久刪除 ID 為 "${docId}" 的這筆紀錄嗎？`)) {
+                try {
+                    const response = await fetch('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: docId }) });
+                    const result = await response.json();
+                    if (result.success) {
+                        alert('刪除成功！');
+                        fetchRecords();
+                    } else { alert('刪除失敗: ' + result.error); }
+                } catch (error) {
+                    alert('刪除請求失敗。');
+                }
             }
         }
-        
         function escapeHtml(unsafe) {
             if (typeof unsafe !== 'string') return '';
             return unsafe.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
