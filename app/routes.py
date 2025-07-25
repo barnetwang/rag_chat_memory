@@ -1,7 +1,8 @@
 import os
 from werkzeug.utils import secure_filename
 from flask import Blueprint, request, jsonify, Response, render_template
-from app import rag_chat, AVAILABLE_MODELS 
+# CORRECTED: Cleaned up imports
+from . import rag_chat, AVAILABLE_MODELS
 
 main = Blueprint('main', __name__)
 
@@ -59,6 +60,7 @@ def set_scraper():
         return jsonify({"success": False, "error": "無效的參數"}), 400
     rag_chat.set_scraper_search(enabled)
     return jsonify({"success": True})
+
 # ---
 
 @main.route('/ask', methods=['GET'])
@@ -85,39 +87,66 @@ def get_all_records():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@main.route('/api/delete', methods=['POST'])
-def delete_record():
-    data = request.get_json()
-    doc_id = data.get('id')
-    if not doc_id:
-        return jsonify({"error": "請求中缺少 ID", "success": False}), 400
-    try:
-        rag_chat.vector_db.delete([doc_id])
-        return jsonify({"success": True, "message": f"成功刪除 ID: {doc_id}"})
-    except Exception as e:
-        return jsonify({"error": str(e), "success": False}), 500
-
 @main.route('/favicon.ico')
 def favicon():
     return '', 204
 
 @main.route('/api/upload_document', methods=['POST'])
 def upload_document():
+    if not rag_chat:
+        return jsonify({"success": False, "error": "RAG 服務未初始化"}), 503
     if 'file' not in request.files:
         return jsonify({"success": False, "error": "請求中未包含檔案"}), 400
     file = request.files['file']
     if file.filename == '':
         return jsonify({"success": False, "error": "未選取檔案"}), 400
-    
+
     upload_folder = 'uploads' 
     os.makedirs(upload_folder, exist_ok=True)
     filename = secure_filename(file.filename)
     file_path = os.path.join(upload_folder, filename)
-    file.save(file_path)
-
+    
     try:
+        file.save(file_path)
+        # CORRECT LOGIC: Call the add_document service method
         rag_chat.add_document(file_path)
-        return jsonify({"success": True, "message": f"檔案 '{filename}' 已成功上傳並處理。"})
+        return jsonify({"success": True, "message": f"文件 '{filename}' 已成功處理並加入索引。"})
     except Exception as e:
-        print(f"上傳處理失敗: {e}")
-        return jsonify({"success": False, "error": f"處理檔案時發生錯誤: {e}"}), 500
+        print(f"❌ 上傳文件時發生嚴重錯誤: {e}")
+        # Clean up the file if something went wrong during processing
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        return jsonify({"success": False, "error": f"處理文件時發生錯誤: {e}"}), 500
+
+# --- CORRECTED: rebuild_index ---
+@main.route('/api/rebuild_index', methods=['POST'])
+def rebuild_index():
+    if not rag_chat:
+        return jsonify({"status": "error", "message": "RAG 服務未初始化。"}), 503
+    
+    print("🚀 收到手動重建索引的請求...")
+    try:
+        rag_chat.update_ensemble_retriever(full_rebuild=True)
+        return jsonify({"status": "success", "message": "混合檢索器索引已根據資料庫完整重建。"})
+    except Exception as e:
+        print(f"❌ 手動重建索引時發生嚴重錯誤: {e}")
+        return jsonify({"status": "error", "message": f"重建時發生錯誤: {e}"}), 500
+
+# --- CORRECTED: delete_record ---
+@main.route('/api/delete', methods=['POST'])
+def delete_record():
+    if not rag_chat:
+        return jsonify({"success": False, "error": "RAG 服務未初始化"}), 503
+        
+    data = request.get_json()
+    doc_id = data.get('id')
+    if not doc_id:
+        return jsonify({"success": False, "error": "請求中缺少 ID"}), 400
+        
+    try:
+        rag_chat.vector_db.delete([doc_id])
+        message = (f"成功從向量資料庫刪除 ID: {doc_id}。 "
+                   f"為保持索引同步，請手動觸發一次「重建索引」。")
+        return jsonify({"success": True, "message": message})
+    except Exception as e:
+        return jsonify({"success": False, "error": f"刪除時發生錯誤: {e}"}), 500
