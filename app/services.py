@@ -8,13 +8,14 @@ from bs4 import BeautifulSoup
 
 # LangChain Imports
 from langchain_ollama.llms import OllamaLLM
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain.prompts import PromptTemplate
-from langchain_community.document_loaders import UnstructuredFileLoader
+from langchain_unstructured.document_loaders import UnstructuredLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.retrievers import BM25Retriever, EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
+from langchain.retrievers import EnsembleRetriever
 from langchain_core.output_parsers import StrOutputParser
 
 def get_ollama_models(ollama_base_url="http://localhost:11434"):
@@ -27,32 +28,43 @@ def get_ollama_models(ollama_base_url="http://localhost:11434"):
         return []
 
 class ConversationalRAG:
-    def __init__(self, persist_directory, embedding_model_name, llm_model, ollama_base_url, 
-                 use_wikipedia=True, use_history=True, use_scraper=True, 
-                 history_summary_threshold=2000):
-        # --- Basic attribute initialization ---
-        self.persist_directory = persist_directory
-        self.use_wikipedia = use_wikipedia
-        self.use_history = use_history
-        self.use_scraper = use_scraper
-        self.ollama_base_url = ollama_base_url
-        self.history_summary_threshold = history_summary_threshold
-        
-        # --- Model and database initialization ---
+    def __init__(self, config: dict):
+        self.config = config
+        self.persist_directory = self.config['PERSIST_DIRECTORY']
+        self.use_wikipedia = True
+        self.use_history = True
+        self.use_scraper = True
+        self.ollama_base_url = self.config['OLLAMA_BASE_URL']
+        self.history_summary_threshold = 2000
+
+        # CORRECTED: Use spaces for indentation
+        self.all_docs_for_bm25 = []
+        self.bm25_retriever = None
+
         print("正在初始化 Embedding 模型...")
-        print(f"   -> 使用模型: {embedding_model_name}")
-        self.embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name, model_kwargs={'device': 'cpu', 'trust_remote_code': True})
+        print(f"   -> 使用模型: {self.config['EMBEDDING_MODEL_NAME']}")
+        print(f"   -> 使用設備: {self.config['EMBEDDING_DEVICE']}")
+        self.embeddings = HuggingFaceEmbeddings(
+            model_name=self.config['EMBEDDING_MODEL_NAME'], 
+            model_kwargs={'device': self.config['EMBEDDING_DEVICE'], 'trust_remote_code': True}
+        )
         print("正在初始化/載入向量資料庫...")
-        self.vector_db = Chroma(persist_directory=self.persist_directory, embedding_function=self.embeddings)
+        self.vector_db = Chroma(
+            persist_directory=self.persist_directory, 
+            embedding_function=self.embeddings
+        )
         print("正在設定 LLM...")
-        self.llm = OllamaLLM(model=llm_model, base_url=self.ollama_base_url)
-        self.current_llm_model = llm_model
+        self.llm = OllamaLLM(model=self.config['llm_model'], base_url=self.ollama_base_url)
+        self.current_llm_model = self.config['llm_model']
 
         # --- Hybrid retriever initialization ---
         print("🔧 正在初始化混合檢索器...")
-        self.vector_retriever = self.vector_db.as_retriever(search_kwargs={'k': 5})
-        self.ensemble_retriever = self.vector_retriever
-        self.update_ensemble_retriever()
+        self.vector_retriever = self.vector_db.as_retriever(
+            search_kwargs={'k': self.config['VECTOR_SEARCH_K']}
+        )
+        self.ensemble_retriever = self.vector_retriever # Start with vector retriever only
+        # The full ensemble retriever will be built by update_ensemble_retriever
+        self.update_ensemble_retriever(full_rebuild=True)
         
         # --- Prompt Templates 初始化 ---
         self._init_prompts()
@@ -117,47 +129,69 @@ class ConversationalRAG:
         self.use_scraper = enabled
         return True
 
-    def update_ensemble_retriever(self):
+    # --- MAJOR REFACTORING of update_ensemble_retriever ---
+    def update_ensemble_retriever(self, new_docs: list = None, full_rebuild: bool = False):
         print("🔄 正在更新 Ensemble Retriever...")
+        if full_rebuild:
+            print("   -> 執行完整重建...")
+            try:
+                all_data = self.vector_db.get(include=["documents", "metadatas"])
+                documents_content = all_data['documents']
+                metadatas = all_data['metadatas']
+                self.all_docs_for_bm25 = [
+                    Document(page_content=documents_content[i], metadata=metadatas[i])
+                    for i in range(len(documents_content))
+                    if documents_content[i] != "start"
+                ]
+                print(f"   -> 從資料庫載入 {len(self.all_docs_for_bm25)} 份文件進行索引。")
+            except Exception as e:
+                print(f"❌ 從 DB 獲取文檔失敗: {e}")
+                self.all_docs_for_bm25 = []
+
+        if new_docs:
+            print(f"   -> 執行增量更新，新增 {len(new_docs)} 份文件...")
+            self.all_docs_for_bm25.extend(new_docs)
+
+        if not self.all_docs_for_bm25:
+            print("   -> 資料庫文檔不足，僅使用向量檢索器。")
+            self.ensemble_retriever = self.vector_retriever
+            self.bm25_retriever = None
+            return
+
         try:
-            all_data = self.vector_db.get(include=["documents", "metadatas"])
-            
-            documents_content = all_data['documents']
-            metadatas = all_data['metadatas']
-
-            all_docs = [
-                Document(page_content=documents_content[i], metadata=metadatas[i])
-                for i in range(len(documents_content))
-                if documents_content[i] != "start"
-            ]
-            
-            if not all_docs:
-                print("   -> 資料庫文檔不足，僅使用向量檢索器。")
-                self.ensemble_retriever = self.vector_retriever
-                return
-
-            bm25_retriever = BM25Retriever.from_documents(all_docs, k=5)
-            self.ensemble_retriever = EnsembleRetriever(
-                retrievers=[bm25_retriever, self.vector_retriever],
-                weights=[0.5, 0.5]
+            print(f"   -> 正在基於 {len(self.all_docs_for_bm25)} 份文件重建 BM25 索引...")
+            self.bm25_retriever = BM25Retriever.from_documents(
+                self.all_docs_for_bm25,
+                k=self.config['BM25_SEARCH_K']
             )
-            print("✅ 混合檢索器已更新。")
+            self.ensemble_retriever = EnsembleRetriever(
+                retrievers=[self.bm25_retriever, self.vector_retriever],
+                weights=self.config['ENSEMBLE_WEIGHTS']
+            )
+            print("✅ 混合檢索器已成功更新。")
         except Exception as e:
             print(f"❌ 更新混合檢索器失敗: {e}。將退回至僅使用向量檢索器。")
             self.ensemble_retriever = self.vector_retriever
             
     def add_document(self, file_path: str):
         print(f"📄 正在處理新文件: {file_path}")
-        loader = UnstructuredFileLoader(file_path)
-        docs = loader.load()
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        splits = text_splitter.split_documents(docs)
-        self.vector_db.add_documents(splits)
-        print(f"✅ 文件 '{os.path.basename(file_path)}' 已成功加入資料庫。")
-        self.update_ensemble_retriever()
-        if os.path.exists(file_path):
-            os.remove(file_path)
-
+        try:
+            loader = UnstructuredLoader(file_path)
+            docs = loader.load()
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=self.config['CHUNK_SIZE'], 
+                chunk_overlap=self.config['CHUNK_OVERLAP']
+            )
+            splits = text_splitter.split_documents(docs)
+            self.vector_db.add_documents(splits)
+            print(f"✅ 文件 '{os.path.basename(file_path)}' 的分塊已成功加入向量資料庫。")
+            self.update_ensemble_retriever(new_docs=splits)
+        finally:
+            # --- 無論 try 區塊成功或失敗，這裡都保證會執行 ---
+            print(f"🧹 正在清理暫存文件: {file_path}")
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            
     def _scrape_webpage_text(self, url: str):
         print(f"🕸️ (爬蟲) 正在嘗試爬取網址: {url}")
         try:
@@ -275,7 +309,10 @@ class ConversationalRAG:
             yield f"data: {json.dumps({'type': 'error', 'error': error_msg})}\n\n"
         
         finally:
-            yield f"data: [DONE]\n\n"
+            # Ensure the temp file is always removed
+            #if os.path.exists(file_path):
+            #    os.remove(file_path)
+                yield f"data: [DONE]\n\n"
 
     def save_qa(self, question, answer):
         if not answer or not answer.strip():
@@ -287,4 +324,5 @@ class ConversationalRAG:
         metadata = { "source": "conversation", "timestamp": current_time }
         new_doc = Document(page_content=qa_pair_content, metadata=metadata)
         self.vector_db.add_documents([new_doc])
-        print("   -> 對話歷史儲存完畢！")
+        self.update_ensemble_retriever(new_docs=[new_doc])
+        print("   -> 對話歷史儲存並同步至混合索引完畢！")
