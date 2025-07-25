@@ -1,16 +1,29 @@
+# --- requirements.txt ---
+
+# Core Framework
 flask
 requests
+
+# Web Scraping & External APIs
 beautifulsoup4
 wikipedia
+
+# Core AI & Orchestration
 langchain
+langchain-core
 langchain-community
 langchain-ollama
 langchain-chroma
-langchain-core
+langchain-huggingface
+langchain-unstructured
+
+# Embeddings & ML
 sentence-transformers
 huggingface-hub
 torch
+
+# Vector Database
 chromadb
-langchain-ollama
-unstructured
+
+# Document Processing
 unstructured[pdf]
