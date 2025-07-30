@@ -1,6 +1,4 @@
-# --- requirements.txt ---
-
-# Core Framework
+# Core Web Framework
 flask
 requests
 
@@ -8,22 +6,39 @@ requests
 beautifulsoup4
 wikipedia
 
-# Core AI & Orchestration
+# --- Core AI & Orchestration ---
+# Main LangChain library
 langchain
+# Core components (Runnable, Schema, etc.)
 langchain-core
+# Community-maintained integrations (loaders, retrievers, etc.)
 langchain-community
+# Ollama integration for LLMs
 langchain-ollama
+# ChromaDB vector store integration
 langchain-chroma
+# HuggingFace integrations (Embeddings)
 langchain-huggingface
-langchain-unstructured
 
-# Embeddings & ML
+# --- Embeddings & Machine Learning ---
+# Core library for running local embedding models
 sentence-transformers
+# For downloading models from the Hub
 huggingface-hub
+# PyTorch is required by sentence-transformers
 torch
 
-# Vector Database
+# --- Vector Database ---
 chromadb
 
-# Document Processing
-unstructured[pdf]
+# --- Document Processing ---
+# For handling various document formats like DOCX, PPTX, etc.
+unstructured
+# Specialized, high-performance PDF parsing
+pypdf
+# For advanced PDF text extraction (recommended over unstructured[pdf])
+pymupdf
+
+# --- Search & Retrieval ---
+# For BM25 keyword search implementation
+rank_bm25
