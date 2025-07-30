@@ -12,11 +12,12 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain.prompts import PromptTemplate
-from langchain_unstructured.document_loaders import UnstructuredLoader
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
 from langchain_core.output_parsers import StrOutputParser
+from langchain_community.vectorstores.utils import filter_complex_metadata
 
 def get_ollama_models(ollama_base_url="http://localhost:11434"):
     try:
@@ -39,14 +40,12 @@ class ConversationalRAG:
 
         # CORRECTED: Use spaces for indentation
         self.all_docs_for_bm25 = []
-        self.bm25_retriever = None
 
         print("正在初始化 Embedding 模型...")
         print(f"   -> 使用模型: {self.config['EMBEDDING_MODEL_NAME']}")
-        print(f"   -> 使用設備: {self.config['EMBEDDING_DEVICE']}")
         self.embeddings = HuggingFaceEmbeddings(
             model_name=self.config['EMBEDDING_MODEL_NAME'], 
-            model_kwargs={'device': self.config['EMBEDDING_DEVICE'], 'trust_remote_code': True}
+            model_kwargs={'device': self.config.get('EMBEDDING_DEVICE', 'cpu'), 'trust_remote_code': True}
         )
         print("正在初始化/載入向量資料庫...")
         self.vector_db = Chroma(
@@ -60,13 +59,13 @@ class ConversationalRAG:
         # --- Hybrid retriever initialization ---
         print("🔧 正在初始化混合檢索器...")
         self.vector_retriever = self.vector_db.as_retriever(
-            search_kwargs={'k': self.config['VECTOR_SEARCH_K']}
+            search_kwargs={'k': self.config.get('VECTOR_SEARCH_K', 5)}
         )
         self.ensemble_retriever = self.vector_retriever # Start with vector retriever only
         # The full ensemble retriever will be built by update_ensemble_retriever
         self.update_ensemble_retriever(full_rebuild=True)
         
-        # --- Prompt Templates 初始化 ---
+
         self._init_prompts()
     
     def _init_prompts(self):
@@ -129,19 +128,17 @@ class ConversationalRAG:
         self.use_scraper = enabled
         return True
 
-    # --- MAJOR REFACTORING of update_ensemble_retriever ---
+
     def update_ensemble_retriever(self, new_docs: list = None, full_rebuild: bool = False):
         print("🔄 正在更新 Ensemble Retriever...")
         if full_rebuild:
             print("   -> 執行完整重建...")
             try:
                 all_data = self.vector_db.get(include=["documents", "metadatas"])
-                documents_content = all_data['documents']
-                metadatas = all_data['metadatas']
                 self.all_docs_for_bm25 = [
-                    Document(page_content=documents_content[i], metadata=metadatas[i])
-                    for i in range(len(documents_content))
-                    if documents_content[i] != "start"
+                    Document(page_content=all_data['documents'][i], metadata=all_data['metadatas'][i])
+                    for i in range(len(all_data['documents']))
+                    if all_data['documents'][i] != "start"
                 ]
                 print(f"   -> 從資料庫載入 {len(self.all_docs_for_bm25)} 份文件進行索引。")
             except Exception as e:
@@ -155,40 +152,73 @@ class ConversationalRAG:
         if not self.all_docs_for_bm25:
             print("   -> 資料庫文檔不足，僅使用向量檢索器。")
             self.ensemble_retriever = self.vector_retriever
-            self.bm25_retriever = None
             return
 
         try:
             print(f"   -> 正在基於 {len(self.all_docs_for_bm25)} 份文件重建 BM25 索引...")
-            self.bm25_retriever = BM25Retriever.from_documents(
+            bm25_retriever = BM25Retriever.from_documents(
                 self.all_docs_for_bm25,
-                k=self.config['BM25_SEARCH_K']
+                k=self.config.get('BM25_SEARCH_K', 5)
             )
             self.ensemble_retriever = EnsembleRetriever(
-                retrievers=[self.bm25_retriever, self.vector_retriever],
-                weights=self.config['ENSEMBLE_WEIGHTS']
+                retrievers=[bm25_retriever, self.vector_retriever],
+                weights=self.config.get('ENSEMBLE_WEIGHTS', [0.5, 0.5])
             )
             print("✅ 混合檢索器已成功更新。")
         except Exception as e:
             print(f"❌ 更新混合檢索器失敗: {e}。將退回至僅使用向量檢索器。")
             self.ensemble_retriever = self.vector_retriever
             
+    def _extract_main_content(self, page_text: str, header_lines=3, footer_lines=3) -> str:
+        lines = page_text.split('\n')
+        if len(lines) <= header_lines + footer_lines: return ""
+        main_content_lines = lines[header_lines:-footer_lines]
+        cleaned_lines = []
+        for line in main_content_lines:
+            stripped_line = line.strip()
+            if stripped_line and not (len(stripped_line.split()) <= 2 and re.search(r'\d', stripped_line)):
+                cleaned_lines.append(line)
+        return '\n'.join(cleaned_lines)
+
     def add_document(self, file_path: str):
-        print(f"📄 正在處理新文件: {file_path}")
+        print(f"📄 正在使用 PyMuPDF 處理新文件: {file_path}")
         try:
-            loader = UnstructuredLoader(file_path)
-            docs = loader.load()
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=self.config['CHUNK_SIZE'], 
-                chunk_overlap=self.config['CHUNK_OVERLAP']
-            )
-            splits = text_splitter.split_documents(docs)
-            self.vector_db.add_documents(splits)
-            print(f"✅ 文件 '{os.path.basename(file_path)}' 的分塊已成功加入向量資料庫。")
-            self.update_ensemble_retriever(new_docs=splits)
+            loader = PyMuPDFLoader(file_path)
+            pages = loader.load()
+            print(f"   -> PDF 共加载了 {len(pages)} 页。")
+
+            full_cleaned_text = ""
+            for page_doc in pages:
+                cleaned_page_text = self._extract_main_content(page_doc.page_content)
+                full_cleaned_text += cleaned_page_text + "\n"
+            
+            print(f"   -> 文本预清理完成，总字元数: {len(full_cleaned_text)}")
+
+            final_doc = Document(page_content=full_cleaned_text, metadata={"source": os.path.basename(file_path)})
+
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+            splits = text_splitter.split_documents([final_doc])
+            print(f"   -> 清理後的文件被切割成 {len(splits)} 個片段。")
+
+            print("   -> 正在過濾複雜的元數據...")
+            filtered_splits = filter_complex_metadata(splits)
+            
+            batch_size = 1000
+            total_splits = len(filtered_splits)
+            print(f"   -> 將以每批 {batch_size} 個片段的大小，分批次存入資料庫...")
+            for i in range(0, total_splits, batch_size):
+                batch = filtered_splits[i:i + batch_size]
+                self.vector_db.add_documents(batch)
+                print(f"      -> 已存入 {min(i + batch_size, total_splits)} / {total_splits} 個片段...")
+            print(f"✅ 文件 '{os.path.basename(file_path)}' 已成功存入向量資料庫。")
+            self.update_ensemble_retriever(new_docs=filtered_splits)
+            print("✅ 混合檢索引擎已更新，现在可以开始提问了。")
+
+        except Exception as e:
+            print(f"❌ 處理文件時發生錯誤: {e}")
+            raise e            
         finally:
-            # --- 無論 try 區塊成功或失敗，這裡都保證會執行 ---
-            print(f"🧹 正在清理暫存文件: {file_path}")
+
             if os.path.exists(file_path):
                 os.remove(file_path)
             
@@ -225,7 +255,7 @@ class ConversationalRAG:
         all_source_docs = []
         context_parts = []
 
-        # 1. 網頁爬蟲
+
         if self.use_scraper:
             url_match = re.search(r'https?://[\S]+', question)
             if url_match:
@@ -244,8 +274,9 @@ class ConversationalRAG:
                 context_parts.append(f"來源：{wiki_doc.metadata['source']}\n內容：\n{wiki_doc.page_content}")
 
         if self.use_history:
-            print(f"🔍 (混合檢索) 正在檢索: '{retrieval_query[:80].replace('\n', ' ')}...'")
-            db_docs = self.ensemble_retriever.get_relevant_documents(retrieval_query)
+            print(f"🔍 (混合检索) 正在检索: '{retrieval_query[:80].replace('\n', ' ')}...'")
+            db_docs_iterable = self.ensemble_retriever.invoke(retrieval_query)
+            db_docs = list(db_docs_iterable)
             db_docs = [doc for doc in db_docs if hasattr(doc, 'page_content') and doc.page_content != "start"]
             
             if db_docs:
