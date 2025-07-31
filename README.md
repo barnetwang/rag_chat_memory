@@ -10,7 +10,7 @@
 
 This project has evolved into a production-ready solution for running a conversational AI. It features an intelligent routing system, advanced hybrid search, and a robust document processing pipeline, all on your local machine.
 
-![image](https://github.com/user-attachments/assets/06047960-b8c0-46f0-9447-c6810934a076)
+![image](https://github.com/user-attachments/assets/b0f520a6-6422-46d1-aebb-2a4e308ab83c)
 
 ---
 
@@ -131,7 +131,7 @@ This project is open-source and relies on several third-party packages. Please r
 
 本專案已進化為一個生產級的解決方案，讓您在自己的電腦上運行一個強大的對話式 AI。它具備智能路由系統、先進的混合式搜尋、以及穩健的文件處理流程，確保完全的隱私。
 
-![image](https://github.com/user-attachments/assets/06047960-b8c0-46f0-9447-c6810934a076)
+![image](https://github.com/user-attachments/assets/b0f520a6-6422-46d1-aebb-2a4e308ab83c)
 
 ---
 
