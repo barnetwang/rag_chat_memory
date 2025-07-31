@@ -4,22 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>本地端 LLM RAG 整合介面</title>
-
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
-
         :root {
-            --bg-color: #121212; --primary-text: #e0e0e0; --secondary-text: #b0b0b0;
-            --surface-color: #1e1e1e; --border-color: #333; --accent-color: #8257E5;
+            --bg-color: #1a1a1a; --primary-text: #f0f0f0; --secondary-text: #a0a0a0;
+            --surface-color: #242424; --border-color: #3a3a3a; --accent-color: #8257E5;
             --accent-hover: #9466FF; --danger-color: #e53935; --danger-hover: #c62828;
             --success-color: #4CAF50; --info-color: #2196F3;
         }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; background-color: var(--bg-color); color: var(--primary-text); }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            font-size: 16px;
+            line-height: 1.6;
+            margin: 0; 
+            background-color: var(--bg-color); 
+            color: var(--primary-text); 
+        }
         .container { max-width: 1600px; margin: 0 auto; padding: 2rem; }
-        h1 { text-align: center; margin-bottom: 2rem; font-weight: 600; }
-        .main-layout { display: flex; gap: 1.5rem; align-items: flex-start; }
+        h1 { text-align: center; margin-bottom: 2rem; font-weight: 600; color: #f9f9f9; }
+        .main-layout { display: flex; gap: 2rem; align-items: flex-start; }
         .left-panel { flex: 3; display: flex; flex-direction: column; }
-        .right-panel { flex: 1; background-color: var(--surface-color); border-radius: 8px; padding: 1.5rem; height: fit-content; min-width: 350px; position: sticky; top: 2rem;}
+        .right-panel { flex: 1; min-width: 350px; position: sticky; top: 2rem;}
         .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 0 0.5rem; margin-bottom: 1rem; }
         .panel-header h2 { margin: 0; font-size: 1.2em; color: var(--primary-text); }
         .danger-btn { background-color: transparent; border: 1px solid var(--danger-color); color: var(--danger-color); padding: 8px 12px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; font-size: 0.9em; }
@@ -30,12 +35,36 @@
         .panel-tab-button.active { color: var(--accent-color); border-bottom-color: var(--accent-color); font-weight: 600;}
         .panel-tab-content { display: none; }
         .panel-tab-content.active { display: block; }
-        .right-panel h3 { margin-top: 0; margin-bottom: 1rem; border-left: 3px solid var(--accent-color); padding-left: 0.8rem;}
-        .control-group { margin-bottom: 1.5rem; }
-        .control-group > label { display: block; margin-bottom: 0.5rem; color: var(--secondary-text); font-size: 0.9em;}
+        
+        .card {
+            background-color: var(--surface-color);
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+        .card-header {
+            padding: 1rem 1.25rem;
+            background-color: rgba(255,255,255,0.03);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 1em;
+            font-weight: 600;
+            margin: 0;
+        }
+        .card-body {
+            padding: 1.25rem;
+        }
+        .card-body.no-padding { padding: 0; }
+        
         #model-selector { width: 100%; padding: 8px; background-color: #2c2c2c; color: var(--primary-text); border: 1px solid var(--border-color); border-radius: 5px; font-size: 1em; }
         #model-status { margin-top: 0.5rem; display: block; font-size: 0.9em; color: var(--secondary-text); transition: color 0.3s;}
-        .toggle-switch-container { display: flex; align-items: center; padding: 0.75rem 0.25rem; border-bottom: 1px solid var(--border-color); }
+        
+        .toggle-switch-container {
+            display: flex;
+            align-items: center;
+            padding: 0.9rem 1.25rem;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
         .toggle-switch-container:last-child { border-bottom: none; }
         .toggle-input { opacity: 0; width: 0; height: 0; position: absolute; }
         .toggle-label { cursor: pointer; display: flex; align-items: center; width: 100%; }
@@ -47,34 +76,38 @@
         .toggle-input:focus + .toggle-label .slider { box-shadow: 0 0 1px var(--success-color); }
         #chat-container { display: flex; flex-direction: column; height: 80vh; background-color: var(--surface-color); border-radius: 8px; overflow: hidden; border: 1px solid var(--border-color);}
         #chat-box { flex-grow: 1; padding: 1rem; overflow-y: auto; }
-        .message { display: flex; margin-bottom: 1rem; }
-        .user-message { justify-content: flex-end; }
-        .bot-message { justify-content: flex-start; }
+        
+        .message { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+        .message::before { content: ''; display: block; width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; font-weight: bold; text-align: center; line-height: 36px; font-size: 1em; }
+        .bot-message::before { background-color: var(--accent-color); content: 'AI'; }
+        .user-message { flex-direction: row-reverse; }
+        .user-message::before { background-color: #4a4a4a; content: 'U'; }
+        
         .message-wrapper { display: flex; flex-direction: column; max-width: 80%; }
         .user-message .message-wrapper { align-items: flex-end; }
         .bot-message .message-wrapper { align-items: flex-start; }
         .message .content { padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
         .user-message .content { background-color: var(--accent-color); color: white; border-bottom-right-radius: 2px; }
         .bot-message .content { background-color: #363636; color: var(--primary-text); border-bottom-left-radius: 2px; min-height: 1.6em;}
-        .sources-container { margin-bottom: 0.5rem; padding-left: 0.5rem; }
-        .sources-container h4 { margin: 0 0 0.5rem 0; font-size: 0.9em; color: var(--secondary-text); display: flex; align-items: center; gap: 0.5rem; }
-        .sources-container h4::before { content: '📚'; }
-        .source-item { background-color: rgba(255, 255, 255, 0.08); padding: 0.4rem 0.8rem; border-radius: 15px; font-size: 0.8em; margin-bottom: 0.5rem; cursor: pointer; border: 1px solid var(--border-color); display: inline-block; margin-right: 0.5rem; transition: all 0.2s; }
+        
+        .sources-container { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+        .sources-container h4 { margin: 0; padding-right: 0.5rem; font-size: 0.9em; color: var(--secondary-text); }
+        .sources-container h4::before { content: '📚'; margin-right: 0.5rem; }
+        .source-item { background-color: rgba(255, 255, 255, 0.08); padding: 0.4rem 0.8rem; border-radius: 15px; font-size: 0.8em; cursor: pointer; border: 1px solid var(--border-color); display: inline-block; transition: all 0.2s; }
         .source-item:hover { background-color: rgba(255, 255, 255, 0.15); border-color: var(--info-color); }
         .source-content-container { display: none; margin-top: 0.5rem; padding: 0.5rem; background-color: rgba(0,0,0,0.3); border-radius: 5px; width: 100%; box-sizing: border-box;}
         .source-content { border-left: 2px solid #555; padding: 0.5rem; margin-bottom: 0.5rem; white-space: pre-wrap; max-height: 150px; overflow-y: auto; color: var(--secondary-text); }
         .source-content:last-child { margin-bottom: 0; }
         mark { background-color: #e6e676; color: #000; padding: 0 2px; border-radius: 2px; }
+        
         #chat-form { display: flex; padding: 1rem; border-top: 1px solid var(--border-color); gap: 0.5rem; }
         #chat-input { flex-grow: 1; padding: 0.75rem; border: 1px solid #444; border-radius: 5px; background-color: #2c2c2c; color: white; font-size: 1rem; resize: none; max-height: 150px; overflow-y: auto; }
+        #chat-input:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px rgba(130, 87, 229, 0.2); }
         #chat-submit { padding: 0.5rem; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 5px; background-color: var(--accent-color); color: white; cursor: pointer; flex-shrink: 0; }
         #chat-submit:hover { background-color: var(--accent-hover); }
         #chat-submit:disabled { background-color: #555; cursor: not-allowed; }
-        .upload-container { margin-bottom: 2rem; padding: 1rem; border: 1px dashed var(--border-color); border-radius: 5px; text-align: center; }
-        .upload-label { font-size: 0.9em; color: var(--secondary-text); margin-bottom: 1rem; display: block; }
-        #file-upload { display: block; margin: 0 auto 1rem auto; }
-        #upload-btn { background-color: var(--accent-color); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
-        #upload-btn:hover { background-color: var(--accent-hover); }
+        
+        .upload-container { text-align: center; }
         #upload-status { margin-top: 1rem; font-size: 0.9em; }
         .search-box { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 1rem; background-color: #2c2c2c; color: #fff; border: 1px solid #444; border-radius: 5px; font-size: 16px; }
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
@@ -93,6 +126,12 @@
         .bot-message .content ul, .bot-message .content ol { padding-left: 2em; }
         .bot-message .content pre { background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word; }
         .bot-message .content code { background-color: rgba(255,255,255,0.1); padding: 2px 4px; border-radius: 3px; font-family: monospace; }
+        
+        #pagination-controls { display: flex; justify-content: center; align-items: center; margin-top: 1.5rem; gap: 0.5rem; }
+        .pagination-btn { background-color: var(--surface-color); border: 1px solid var(--border-color); color: var(--primary-text); padding: 8px 14px; border-radius: 5px; cursor: pointer; transition: all 0.2s; }
+        .pagination-btn:hover:not(:disabled) { background-color: var(--accent-color); border-color: var(--accent-color); }
+        .pagination-btn:disabled { color: #666; cursor: not-allowed; }
+        #page-info { font-size: 0.9em; color: var(--secondary-text); }
     </style>
 </head>
 <body>
@@ -112,6 +151,7 @@
                         <div class="message bot-message">
                             <div class="message-wrapper">
                                 <div class="content">你好！我是您的 RAG 助理。您可以從右側面板選擇模型、設定功能或上傳文件來開始對話。</div>
+								<div class="content">Hello! I am your RAG assistant. You can select a model, configure features, or upload documents from the right panel to start a conversation.</div>
                             </div>
                         </div>
                     </div>
@@ -129,60 +169,70 @@
                     <button class="panel-tab-button" onclick="openPanelTab(event, 'db-manager')">資料庫管理</button>
                 </div>
                 <div id="settings" class="panel-tab-content">
-                    <h3>模型與功能</h3>
-                    <div class="control-group">
-                        <label for="model-selector">選取模型:</label>
-                        <select id="model-selector">
-                            <option value="">正在載入...</option>
-                        </select>
-                        <span id="model-status"></span>
-                    </div>
-                    <div class="control-group">
-                        <div class="toggle-switch-container">
-                            <input type="checkbox" id="scraper-toggle" class="toggle-input" checked>
-                            <label for="scraper-toggle" class="toggle-label">
-                                <span class="slider"></span>
-                                <span class="toggle-text">啟用網頁爬蟲</span>
-                            </label>
+                    <div class="card">
+                        <h3 class="card-header">模型與功能</h3>
+                        <div class="card-body">
+                            <label for="model-selector">選取模型:</label>
+                            <select id="model-selector">
+                                <option value="">正在載入...</option>
+                            </select>
+                            <span id="model-status"></span>
                         </div>
-                        <div class="toggle-switch-container">
-                            <input type="checkbox" id="wikipedia-toggle" class="toggle-input" checked>
-                             <label for="wikipedia-toggle" class="toggle-label">
-                                <span class="slider"></span>
-                                <span class="toggle-text">啟用維基百科</span>
-                            </label>
-                        </div>
-                        <div class="toggle-switch-container">
-                             <input type="checkbox" id="history-toggle" class="toggle-input" checked>
-                             <label for="history-toggle" class="toggle-label">
-                                <span class="slider"></span>
-                                <span class="toggle-text">啟用歷史對話</span>
-                            </label>
+                        <div class="card-body no-padding">
+                            <div class="toggle-switch-container">
+                                <input type="checkbox" id="scraper-toggle" class="toggle-input" checked>
+                                <label for="scraper-toggle" class="toggle-label">
+                                    <span class="slider"></span>
+                                    <span class="toggle-text">啟用網頁爬蟲</span>
+                                </label>
+                            </div>
+                            <div class="toggle-switch-container">
+                                <input type="checkbox" id="wikipedia-toggle" class="toggle-input" checked>
+                                 <label for="wikipedia-toggle" class="toggle-label">
+                                    <span class="slider"></span>
+                                    <span class="toggle-text">啟用維基百科</span>
+                                </label>
+                            </div>
+                            <div class="toggle-switch-container">
+                                 <input type="checkbox" id="history-toggle" class="toggle-input" checked>
+                                 <label for="history-toggle" class="toggle-label">
+                                    <span class="slider"></span>
+                                    <span class="toggle-text">啟用歷史對話</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                 </div>
                 <div id="db-manager" class="panel-tab-content">
-                    <h3>資料庫管理</h3>
-                    <div class="upload-container">
-                        <label for="file-upload" class="upload-label">上傳文件 (.pdf, .docx, .txt...)</label>
-                        <input id="file-upload" type="file" accept=".pdf,.doc,.docx,.txt,.md,.html,.pptx">
-                        <button id="upload-btn">上傳並處理</button>
-                        <div id="upload-status"></div>
+                    <div class="card">
+                        <h3 class="card-header">文件上傳</h3>
+                        <div class="card-body upload-container">
+                            <label for="file-upload" class="upload-label">上傳新文件到知識庫</label>
+                            <input id="file-upload" type="file" accept=".pdf,.doc,.docx,.txt,.md,.html,.pptx">
+                            <button id="upload-btn">上傳並處理</button>
+                            <div id="upload-status"></div>
+                        </div>
                     </div>
-                    <input type="text" id="searchBox" class="search-box" placeholder="即時搜索對話內容...">
-                    <p id="recordCount">總共有 0 筆紀錄</p>
-                    <div id="loading" class="loading">正在載入資料...</div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width: 20%;">ID</th>
-                                <th style="width: 55%;">內容</th>
-                                <th style="width: 15%;">來源</th>
-                                <th style="width: 10%;">操作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="recordTableBody"></tbody>
-                    </table>
+                    <div class="card">
+                        <h3 class="card-header">知識庫管理</h3>
+                        <div class="card-body">
+                            <input type="text" id="searchBox" class="search-box" placeholder="即時搜索當前頁面內容...">
+                            <p id="recordCount">總共有 0 筆紀錄</p>
+                            <div id="loading" class="loading">正在載入資料...</div>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style="width: 20%;">ID</th>
+                                        <th style="width: 55%;">內容</th>
+                                        <th style="width: 15%;">來源</th>
+                                        <th style="width: 10%;">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recordTableBody"></tbody>
+                            </table>
+                            <div id="pagination-controls"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -193,6 +243,9 @@
         let chatBox, chatInput, submitButton, modelSelector, modelStatus, clearChatBtn;
         let historyToggle, wikipediaToggle, scraperToggle;
         let uploadBtn, fileInput, uploadStatus;
+        let allRecords = [];
+        let currentPage = 1;
+		let searchDebounceTimer;
 
         // --- Init Function ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -435,6 +488,13 @@
             animationFrameId = null;
         };
 
+            const appendError = (message) => {
+                const errorP = document.createElement('p');
+                errorP.style.color = 'var(--danger-color)';
+                errorP.textContent = `[錯誤]：${message}`;
+                botContentDiv.appendChild(errorP);
+                submitButton.disabled = false;
+            };
         try {
             const eventSource = new EventSource(`/ask?question=${encodeURIComponent(question)}`);
             
@@ -465,22 +525,20 @@
                         animationFrameId = requestAnimationFrame(render);
                     }
                 } else if (data.type === 'error' || data.error) {
-                    botContentDiv.innerHTML += `<p style="color:var(--danger-color)">[錯誤]：${escapeHtml(data.error)}</p>`;
+                        appendError(data.error);
                     eventSource.close();
-                    submitButton.disabled = false;
                 }
             };
 
             eventSource.onerror = function(err) {
                 console.error("EventSource failed:", err);
-                botContentDiv.innerHTML += `<p style="color:var(--danger-color)">[錯誤]：無法連接到伺服器。</p>`;
+                    appendError("無法連接到伺服器。");
                 eventSource.close();
                 submitButton.disabled = false;
             };
         } catch (error) {
             console.error('Error:', error);
-            botContentDiv.textContent = "[發生錯誤，請查看主控台]";
-            submitButton.disabled = false;
+                appendError("發生未知的前端錯誤，請查看主控台。");
         }
     }
         function toggleThink(buttonElement) {
@@ -493,50 +551,97 @@
                 sendMessage();
             }
         }
-        let allRecords = [];
+        
         function initDbManager() {
-            fetchRecords();
-            document.getElementById('searchBox').addEventListener('input', (e) => {
-                const searchTerm = e.target.value.toLowerCase();
-                renderTable(allRecords.filter(record => record.content.toLowerCase().includes(searchTerm)));
-            });
+            fetchRecords(1);
+			const searchBox = document.getElementById('searchBox');
+            // 使用 debounce 技術來優化搜尋體驗
+            searchBox.addEventListener('input', () => {
+            clearTimeout(searchDebounceTimer);
+            // 在使用者停止輸入 300 毫秒後，才觸發搜尋
+            searchDebounceTimer = setTimeout(() => {
+            fetchRecords(1); // 每次搜尋都從第一頁開始
+        }, 300);
+    });
         }
-        async function fetchRecords() {
+        
+        async function fetchRecords(page = 1) {
             const loadingDiv = document.getElementById('loading');
             const tableBody = document.getElementById('recordTableBody');
+            const searchBox = document.getElementById('searchBox');
+            const perPage = 50;
+			const searchQuery = searchBox.value.trim();
             loadingDiv.style.display = 'block';
             tableBody.innerHTML = '';
-            document.getElementById('searchBox').value = '';
+            
             try {
-                const response = await fetch('/api/records');
-                if (!response.ok) throw new Error('無法取得資料');
-                allRecords = await response.json();
-                renderTable(allRecords);
+            const response = await fetch(`/api/records?page=${page}&per_page=${perPage}&query=${encodeURIComponent(searchQuery)}`);
+                if (!response.ok) throw new Error('無法獲取資料');      
+                 const data = await response.json();      
+                 allRecords = data.records; // allRecords 現在只用於客戶端高亮，不再用於過濾
+                 currentPage = data.current_page;   
+                 renderTable(allRecords, searchQuery); // 傳入 searchQuery 用於高亮
+                 renderPagination(data.total_pages, data.current_page);
+                 document.getElementById('recordCount').innerText = `總共有 ${data.total_records} 筆紀錄`;
+
             } catch (error) {
-                console.error('取得紀錄失敗:', error);
-                loadingDiv.innerText = '取得紀錄失敗。';
+               console.error('獲取紀錄失敗:', error);
+               loadingDiv.innerText = '獲取紀錄失敗。';
             } finally {
-                loadingDiv.style.display = 'none';
+        loadingDiv.style.display = 'none';
             }
         }
-        function renderTable(records) {
+
+        function renderPagination(totalPages, currentPage) {
+            const container = document.getElementById('pagination-controls');
+            container.innerHTML = '';
+            if (totalPages <= 1) return;
+
+            const prevButton = document.createElement('button');
+            prevButton.className = 'pagination-btn';
+            prevButton.textContent = '« 上一頁';
+            prevButton.disabled = currentPage === 1;
+            prevButton.addEventListener('click', () => fetchRecords(currentPage - 1));
+            container.appendChild(prevButton);
+
+            const pageInfo = document.createElement('span');
+            pageInfo.id = 'page-info';
+            pageInfo.textContent = `第 ${currentPage} / ${totalPages} 頁`;
+            container.appendChild(pageInfo);
+
+            const nextButton = document.createElement('button');
+            nextButton.className = 'pagination-btn';
+            nextButton.textContent = '下一頁 »';
+            nextButton.disabled = currentPage === totalPages;
+            nextButton.addEventListener('click', () => fetchRecords(currentPage + 1));
+            container.appendChild(nextButton);
+        }
+        
+        function renderTable(records, searchTerm = "") {
             const tableBody = document.getElementById('recordTableBody');
-            document.getElementById('recordCount').innerText = `總共有 ${records.length} 筆紀錄`;
             tableBody.innerHTML = '';
+			const regex = searchTerm ? new RegExp(`(${escapeRegex(searchTerm)})`, 'gi') : null;
             records.forEach(record => {
                 const row = tableBody.insertRow();
+				let contentHtml = escapeHtml(record.content.substring(0, 150)) + (record.content.length > 150 ? '...' : '');			
                 let sourceText = record.metadata.source;
                 if (sourceText === 'conversation' && record.metadata.timestamp) {
                     sourceText = `歷史對話 (${record.metadata.timestamp})`;
                 } else {
                     sourceText = sourceText.split(/[\\/]/).pop();
                 }
-                row.innerHTML = `<td><span class="record-id">${escapeHtml(record.id)}</span></td>
-                                 <td>${escapeHtml(record.content.substring(0, 150)) + (record.content.length > 150 ? '...' : '')}</td>
-                                 <td>${escapeHtml(sourceText)}</td>
-                                 <td><button class="delete-btn" data-id="${escapeHtml(record.id)}">刪除</button></td>`;
+                if (regex) {
+                    contentHtml = contentHtml.replace(regex, `<mark>$1</mark>`);
+                }				
+                row.innerHTML = `<td>...</td>
+                         <td>${contentHtml}</td>
+                         <td>${escapeHtml(sourceText)}</td>
+                         <td><button class="delete-btn" data-id="${escapeHtml(record.id)}">刪除</button></td>`;
             });
             document.querySelectorAll('.delete-btn').forEach(button => button.addEventListener('click', handleDelete));
+        }
+		function escapeRegex(string) {
+           return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
         }
         async function handleDelete(event) {
             const docId = event.target.dataset.id;
@@ -546,16 +651,17 @@
                     const result = await response.json();
                     if (result.success) {
                         alert('刪除成功！');
-                        fetchRecords();
+                        fetchRecords(currentPage);
                     } else { alert('刪除失敗: ' + result.error); }
                 } catch (error) {
                     alert('刪除請求失敗。');
                 }
             }
         }
+        
         function escapeHtml(unsafe) {
             if (typeof unsafe !== 'string') return '';
-            return unsafe.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+            return unsafe.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&#039;');
         }
     </script>
 </body>
