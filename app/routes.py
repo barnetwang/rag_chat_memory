@@ -77,25 +77,38 @@ def get_records():
 
 @main.route('/api/upload_document', methods=['POST'])
 def upload_document():
-    if not rag_chat: return jsonify({"success": False, "error": "RAG 服務未初始化"}), 503
-    if 'file' not in request.files: return jsonify({"success": False, "error": "請求中未包含檔案"}), 400
+    if not rag_chat:
+        return jsonify({"success": False, "error": "RAG 服務未初始化"}), 503
+    if 'file' not in request.files:
+        return jsonify({"success": False, "error": "請求中未包含文件"}), 400
     file = request.files['file']
-    if file.filename == '': return jsonify({"success": False, "error": "未選取檔案"}), 400
+    if file.filename == '':
+        return jsonify({"success": False, "error": "未選擇文件"}), 400
 
-    upload_folder = 'uploads' 
+    upload_folder = 'uploads'
     os.makedirs(upload_folder, exist_ok=True)
     filename = secure_filename(file.filename)
     file_path = os.path.join(upload_folder, filename)
-    
+
     try:
+        # Save the file to the upload folder
         file.save(file_path)
-        # CORRECT LOGIC: Call the add_document service method
+        # Process the file and add it to the index
         rag_chat.add_document(file_path)
         return jsonify({"success": True, "message": f"文件 '{filename}' 已成功處理並加入索引。"})
     except Exception as e:
-        print(f"❌ 上傳文件時發生嚴重錯誤: {e}")
-        # Clean up the file if something went wrong during processing
+        print(f"❌ 文件處理時發生嚴重錯誤: {e}")
         return jsonify({"success": False, "error": f"處理文件時發生錯誤: {str(e)}"}), 500
+@main.route('/api/set_theme', methods=['POST'])
+def set_theme():
+    data = request.get_json()
+    theme = data.get('theme')
+    if theme not in ['light', 'dark']:
+        return jsonify({"success": False, "error": "無效的主题"}), 400
+    # Save the theme preference to a cookie or database
+    response = jsonify({"success": True})
+    response.set_cookie('theme', theme)
+    return response
 
 @main.route('/api/delete', methods=['POST'])
 def delete_record():
