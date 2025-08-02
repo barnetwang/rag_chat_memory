@@ -2,9 +2,13 @@
 flask
 requests
 
-# Web Scraping & External APIs
+# Web Scraping & APIs
 beautifulsoup4
 wikipedia
+
+# --- Web Search Engine Tool ---
+# Free and powerful search tool for our Research Agent
+ddgs
 
 # --- Core AI & Orchestration ---
 # Main LangChain library
@@ -39,6 +43,6 @@ pypdf
 # For advanced PDF text extraction (recommended over unstructured[pdf])
 pymupdf
 
-# --- Search & Retrieval ---
-# For BM25 keyword search implementation
+# --- Local Search & Retrieval ---
+# For BM25 keyword search implementation in the hybrid retriever
 rank_bm25
