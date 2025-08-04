@@ -4,119 +4,130 @@
 
 <a name="-english-readme"></a>
 
-# Local LLM RAG Web UI - v2.5 (Intelligent Engine Edition)
+# Local LLM RAG Web UI
 
 **An intelligent, high-performance, 100% local, and private Retrieval-Augmented Generation (RAG) web interface powered by Ollama and LangChain.**
 
-This project has evolved into a production-ready solution for running a conversational AI. It features an intelligent routing system, advanced hybrid search, and a robust document processing pipeline, all on your local machine.
+This project has evolved beyond a simple RAG UI into a powerful, **autonomous AI research assistant** that runs 100% locally on your machine. It leverages a multi-agent "Expert Team" workflow to transform a single complex question into a detailed, well-researched, and fully-cited report.
+
+Designed for privacy, cost-effectiveness, and professional-grade output, this tool is your personal, automated strategy consultant.
 
 ![image](https://github.com/user-attachments/assets/b0f520a6-6422-46d1-aebb-2a4e308ab83c)
 
 ---
 
-## 🌟 Key Features
+## 🌟 Core Features
 
-*   **💻 100% Local & Private:** Runs entirely on your machine using [Ollama](https://ollama.com/). Your models and data stay with you.
-*   **🧠 Intelligent Query Routing:** Employs a multi-path RAG architecture. An LLM-powered router analyzes incoming questions to distinguish between complex RAG queries and general conversation, directing them to the optimal processing pipeline.
-*   **🚀 High-Performance Hybrid Search:** Combines keyword search (BM25) and semantic search (vectors) for superior retrieval accuracy on both technical terms and conceptual questions. The keyword index is efficiently updated in memory after new documents are added.
-*   **📄 Robust Multi-Format Document Ingestion:** Upload and process various document formats (PDF, DOCX, TXT, etc.). The pipeline uses specialized parsers like `PyMuPDF` for high-quality text extraction from complex layouts and includes an advanced pre-processing step to clean headers, footers, and other noise.
-*   **💡 AI-Powered Query Expansion:** Automatically refines vague user queries into more specific, detailed search terms to significantly improve retrieval "hit rates".
-*   **📝 Trustworthy Answers with Source Citation:** Every answer generated from the knowledge base is accompanied by clickable source links, allowing users to trace information back to the original document snippets.
-*   **🌐 Multi-Source RAG Engine:** Augments responses using:
-    *   **Uploaded Documents:** Your private knowledge base.
-    *   **Dialogue History:** Remembers past conversations for context.
-    *   **Web Scraper & Wikipedia Search:** (Optional) Can be enabled for real-time information.
-*   **🔄 Live Model Switching:** Change the underlying LLM (any model in Ollama) directly from the UI.
-*   **🛠️ Database & Index Management:** View, search, and delete individual records. The system is architected to handle tens of thousands of document chunks gracefully with batch processing.
+*   **🤖 Autonomous "Expert Team" Workflow**: The system's core innovation. A single user query triggers a sophisticated multi-agent process:
+    1.  **Router**: Intelligently identifies complex research tasks.
+    2.  **Task Decomposer**: Breaks the main query into 2-4 distinct, non-overlapping research sub-tasks.
+    3.  **Web Researcher**: For each sub-task, it generates keywords, scours the web (including HTML and PDFs), scrapes content with an advanced crawler (`Playwright` + `PyMuPDF`), and gathers high-quality data.
+    4.  **Blueprint Architect**: Synthesizes all research memos into a structured JSON report blueprint.
+    5.  **Chapter Writer**: A dedicated agent writes each chapter of the final report based on the blueprint and the full research context, complete with source citations.
+*   **💻 100% Local & Privacy-Focused**: Runs entirely on your machine via [Ollama 🔗](https://ollama.com/), ensuring your data never leaves your computer.
+*   **📄 Multi-Format RAG Engine**: Ingests and processes a wide range of document formats (`PDF`, `DOCX`, etc.) and integrates data from **uploaded files**, **chat history**, and **real-time web research**.
+*   **🔗 Verifiable & Trustworthy Answers**: Every piece of information in the generated report is tied back to its source. The final output includes a comprehensive list of clickable source links.
+*   **🚀 High-Performance Hybrid Search**: (For local documents) Combines BM25 keyword search and vector search to achieve superior retrieval accuracy.
+*   **🔄 Real-time Model Switching**: Easily switch the underlying LLM model directly from the UI without restarting the server.
+*   **🛠️ Memory & Index Management**: Full control to browse, search, and delete individual records from your knowledge base.
+
+---
 
 ## 🛠️ Technology Stack
 
-*   **Backend:** Flask
-*   **LLM Serving:** Ollama
-*   **Orchestration:** LangChain (v0.2+)
-*   **Document Processing:** PyMuPDF, Unstructured
-*   **Search & Retrieval:**
-    *   **Vector Database:** ChromaDB
-    *   **Keyword Search:** rank_bm25
-    *   **Hybrid Search:** LangChain EnsembleRetriever
-*   **Embeddings:** HuggingFace Sentence Transformers (e.g., `nomic-embed-text`)
+- **Backend Framework:** [Flask](https://flask.palletsprojects.com/)
+- **LLM Service Provider:** [Ollama](https://ollama.com/)
+- **AI Framework:** [LangChain (v0.2+)](https://python.langchain.com/docs/)
+- **Web Scraping & Automation:** [Playwright](https://playwright.dev/) & [DuckDuckGo Search](https://pypi.org/project/duckduckgo-search/)
+- **Document Processing:** `PyMuPDF` (for superior PDF extraction), `Unstructured`
+- **Search & Retrieval:**
+    -   Vector Database: [ChromaDB](https://github.com/chromadb/chroma)
+    -   Keyword Search: `rank_bm25`
+    -   Hybrid Retrieval: LangChain’s `EnsembleRetriever`
+- **Embedding Models:** [HuggingFace Sentence Transformers](https://huggingface.co/sentence-transformers)
+
+---
 
 ## ⚙️ Installation & Setup
 
 ### Prerequisites
-
-*   Python 3.9+
-*   Git
-*   [Ollama](https://ollama.com/) installed and running.
+- Python ≥ 3.9
+- Git
+- [Ollama](https://ollama.com/) installed and running (`ollama serve`)
 
 ### Step-by-Step Guide
 
-1.  **Clone the repository:**
+1.  **Clone the Repository**
     ```bash
-    git clone https://github.com/barnetwang/rag-chat-memory.git
-    cd rag-chat-memory
+    git clone https://github.com/barnetwang/rag-chatbot.git
+    cd rag-chatbot
     ```
 
-2.  **Install Python dependencies:**
+2.  **Install Python Dependencies**
     ```bash
     pip install -r requirements.txt
     ```
 
-3.  **Pull an Ollama model:**
-    The default LLM and Embedding models are configured in `config.py`. Make sure you have them downloaded.
+3.  **Install Playwright Browsers** (One-time setup)
+    This is crucial for the web research agent.
     ```bash
-    # Example for the default LLM
-    ollama pull gemma:2b
-
-    # Example for the default Embedding model (if you choose to use Ollama for embeddings)
-    ollama pull nomic-embed-text
+    playwright install
     ```
 
-4.  **Launch the application:**
+4.  **Pull Required Ollama Models**
+    Edit `config.py` to set your preferred models, then download them. For example:
+    ```bash
+    ollama pull qwen3:latest       # Main LLM for generation
+    ollama pull nomic-embed-text      # Embedding model
+    ```
+
+5.  **Start the Application**
     ```bash
     python run.py
     ```
 
-5.  **Open the Web UI:**
-    Open your browser and navigate to **http://127.0.0.1:5000**.
+6.  **Open the Web UI** in your browser at `http://127.0.0.1:5000`
 
-## 🔧 Configuration
-
-You can customize the application's behavior by editing the `config.py` file:
-
-*   **Core Settings:**
-    *   `DEFAULT_MODEL`: The default LLM model to use on startup.
-    *   `EMBEDDING_MODEL_NAME`: The sentence-transformer model for embeddings from Hugging Face.
-    *   `PERSIST_DIRECTORY`: Folder where the vector database is stored.
-
-*   **RAG Tuning Parameters:**
-    *   `VECTOR_SEARCH_K` & `BM25_SEARCH_K`: The number of results to retrieve from each search method.
-    *   `ENSEMBLE_WEIGHTS`: The weights to assign to vector search vs. keyword search.
+---
 
 ## 📂 Project Structure
+
 ```
 /
 ├── app/
-│   ├── __init__.py      # Initializes the Flask app
-│   ├── routes.py        # Contains all Flask routes and API endpoints
-│   ├── services.py      # Contains the core ConversationalRAG class
-│   ├── static/          # For CSS/JS files
-│   └── templates/
-│       └── index.html   # The single-page HTML for the frontend UI
-├── config.py            # All user-configurable settings
-├── run.py               # The main entry point to start the application
-├── requirements.txt     # Python package dependencies
-└── README.md            # This file
+│ ├── init.py # Initialize Flask app & core services
+│ ├── routes.py # API endpoints
+│ ├── services.py # Core logic class: ConversationalRAG
+│ ├── static/ # Frontend CSS & JS
+│ ├── templates/
+│ │ └── index.html # Main web interface
+│ └── prompts/ # Houses all prompt templates (.txt files) for agents
+├── config.py # All customizable settings
+├── run.py # Entry point to launch the app
+├── requirements.txt # Python dependencies
+└── README.md # You're here!
 ```
+
+---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please follow the standard Fork and Pull Request workflow.
+We welcome contributions!
+Follow these steps:
+
+1. Fork the repo
+2. Create a new branch: `git checkout -b feature/your-feature`
+3. Commit changes: `git commit -am 'Add some feature'`
+4. Push to branch: `git push origin feature/your-feature`
+5. Open a Pull Request
+
+---
 
 ## ⚖️ License & Acknowledgements
 
-This project is open-source and relies on several third-party packages. Please review their licenses before using this project for commercial purposes.
+This project is open-source and uses various third-party libraries.
 
+Please review their licenses carefully before using this code for commercial purposes.
 ---
 <br>
 
@@ -125,104 +136,137 @@ This project is open-source and relies on several third-party packages. Please r
 
 <a name="-中文說明"></a>
 
-# 本地端 LLM RAG 整合介面 - v2.5 (智能引擎版)
+# 本地端 LLM RAG 整合介面
 
 **一個智能、高性能、100% 本地運行、注重隱私的檢索增強生成 (RAG) 網頁應用程式，由 Ollama 與 LangChain 驅動。**
 
-本專案已進化為一個生產級的解決方案，讓您在自己的電腦上運行一個強大的對話式 AI。它具備智能路由系統、先進的混合式搜尋、以及穩健的文件處理流程，確保完全的隱私。
+本專案已進化為一個強大的**自主 AI 研究助理**，能夠 100% 在您的本機上運行。它利用一個「專家小組」多智能體工作流，將一個複雜的問題，轉化為一份詳細、研究充分、且引用來源完整的深度報告。
+
+專為注重隱私、成本效益和專業級輸出的使用者設計，此工具是您的個人自動化策略顧問。
 
 ![image](https://github.com/user-attachments/assets/b0f520a6-6422-46d1-aebb-2a4e308ab83c)
 
 ---
 
-## 🌟 核心功能
+*   **🤖 自主「專家小組」工作流**: 本系統的核心創新。使用者的一個複雜問題將觸發一套精密的自動化流程：
+    1.  **路由器 (Router)**: 智能識別需要深度研究的複雜任務。
+    2.  **任務拆解器 (Task Decomposer)**: 將主問題分解為 2-4 個獨立、不重複的研究子任務。
+    3.  **網路研究員 (Web Researcher)**: 為每個子任務生成關鍵詞，全面搜索網路（包含網頁與PDF），使用先進的爬蟲 (`Playwright` + `PyMuPDF`) 抓取高品質資料。
+    4.  **藍圖架構師 (Blueprint Architect)**: 將所有研究備忘錄綜合成一份結構化的 JSON 報告藍圖。
+    5.  **章節撰寫器 (Chapter Writer)**: 一個專門的 AI 智能體，根據藍圖和全部研究資料，逐章撰寫最終報告的詳細內容，並附上來源引用。
+*   **💻 100% 本地化與隱私保護**: 完全透過 [Ollama](https://ollama.com/) 在您的本機運行，確保您的資料永遠不會離開您的電腦。
+*   **📄 多格式 RAG 引擎**: 可讀取並處理多種文件格式 (`PDF`, `DOCX` 等)，並能整合來自**上傳的檔案**、**對話歷史**及**即時網路研究**的資料。
+*   **🔗 可驗證與可信賴的答案**: 報告中的每一條資訊都與其來源掛鉤。最終的輸出會包含一份完整的、可點擊的來源連結列表。
+*   **🚀 高性能混合式搜尋**: (針對本地文件) 結合關鍵詞搜尋 (BM25) 與語義向量搜尋，實現卓越的檢索準確度。
+*   **🔄 即時模型切換**: 無需重啟伺服器，直接從 UI 介面輕鬆切換底層的 LLM 模型。
+*   **🛠️ 記憶庫與索引管理**: 完整的功能，讓您能瀏覽、搜尋和刪除知識庫中的單筆紀錄。
 
-*   **💻 100% 本地化與隱私:** 完全在您的本機上透過 [Ollama](https://ollama.com/) 運行。
-*   **🧠 智能查詢路由:** 採用多路徑 RAG 架構。由 LLM 驅動的路由器會分析傳入的問題，區分需要深度檢索的複雜查詢和一般對話，並將它們導向最佳的處理流程。
-*   **🚀 高性能混合式搜尋:** 結合關鍵詞搜尋 (BM25) 與語義搜尋 (向量)，在處理技術術語和概念性問題時都能達到卓越的檢索準確度。關鍵詞索引在新增文件後會高效地在記憶體中進行更新。
-*   **📄 穩健的多格式文件處理:** 可上傳並處理多種文件格式（PDF, DOCX 等）。處理流程使用如 `PyMuPDF` 等專業解析器，以從複雜佈局中進行高質量的文本提取，並包含先進的預處理步驟來清理頁眉、頁腳等噪音。
-*   **💡 AI 驅動的查詢擴展:** 自動將使用者模糊的查詢，細化為更具體、更專業的搜索詞，顯著提升檢索“命中率”。
-*   **📝 可信賴的答案與來源引用:** 每個從知識庫生成的回答都會附帶可點擊的來源連結，讓使用者能追溯資訊至原始的文件片段。
-*   **🌐 多源 RAG 引擎:** 可整合來自**上傳的文件**、**對話歷史**、**網頁爬蟲**和**維基百科**的多種資訊源。
-*   **🔄 即時模型切換:** 直接從 UI 更換底層的 LLM 模型。
-*   **🛠️ 記憶庫與索引管理:** 可瀏覽、搜尋和刪除單筆紀錄。系統透過分批處理，能夠輕鬆應對包含數萬片段的大型文件。
+---
 
 ## 🛠️ 技術棧
 
-*   **後端框架:** Flask
-*   **LLM 服務:** Ollama
-*   **AI 框架:** LangChain (v0.2+)
-*   **文件處理:** PyMuPDF, Unstructured
+*   **後端框架:** [Flask](https://flask.palletsprojects.com/)
+*   **LLM 服務:** [Ollama](https://ollama.com/)
+*   **AI 框架:** [LangChain (v0.2+)](https://python.langchain.com/docs/)
+*   **文件處理:** `PyMuPDF`, `Unstructured`
 *   **搜尋與檢索:**
-    *   **向量資料庫:** ChromaDB
-    *   **關鍵詞搜尋:** rank_bm25
-    *   **混合式搜尋:** LangChain EnsembleRetriever
-*   **嵌入模型:** HuggingFace Sentence Transformers (例如 `nomic-embed-text`)
+    *   **向量資料庫:** [ChromaDB](https://github.com/chromadb/chroma)
+    *   **關鍵詞搜尋:** [`rank_bm25`](https://pypi.org/project/rank-bm25/)
+    *   **混合式搜尋:** LangChain 的 [`EnsembleRetriever`](https://python.langchain.com/docs/modules/data_connection/retrievers/ensemble/)
+*   **嵌入模型:** [HuggingFace Sentence Transformers](https://huggingface.co/sentence-transformers)
+  - 預設示例: `nomic-embed-text`
+
+---
 
 ## ⚙️ 安裝與啟動
 
-### 前置需求
+### 前置條件
 
-*   Python 3.9+
-*   Git
-*   [Ollama](https://ollama.com/) 已安裝並正在運行。
+確保以下項目均已安裝並執行:
 
-### 步驟指南
+- Python ≥ 3.9
+- Git
+- [Ollama](https://ollama.com/) 已安裝且運行中 (`ollama serve`)
 
-1.  **克隆專案倉庫：**
-    ```bash
-    git clone https://github.com/barnetwang/rag-chat-memory.git
-    cd rag-chat-memory
-    ```
+> 💡 **提示**: 使用 `screen` 或 `nohup` 在背景啟動 Ollama，避免終端被佔用。
 
-2.  **安裝 Python 依賴套件：**
-    ```bash
-    pip install -r requirements.txt
-    ```
+---
 
-3.  **下載 Ollama 模型：**
-    專案的預設模型可在 `config.py` 中設定，請確保您已下載。
-    ```bash
-    # 以 gemma:2b 為例
-    ollama pull gemma:2b
-    ```
+### 操作步驟
 
-4.  **啟動應用程式：**
-    ```bash
-    python run.py
-    ```
+1. **複製倉儲**
+   ```bash
+   git clone https://github.com/barnetwang/rag-chatbot.git
+   cd rag-chatbot
+   ```
 
-5.  **打開 Web UI：**
-    打開您的瀏覽器，並訪問 **http://127.0.0.1:5000**。
+2. **安裝依賴套件**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## 🔧 專案設定
+3. **下載所需模型**
 
-您可以透過編輯 `config.py` 檔案來自訂應用程式的行為：
+   修改 `config.py` 中的預設模型設定後進行下載：
+   ```bash
+   ollama pull qwen3:latest          # 默認 LLM 模型
+   oollama pull nomic-embed-text  # 默認嵌入模型（如需使用）
+   ```
 
-*   **核心設定:**
-    *   `DEFAULT_MODEL`: 啟動時預設使用的 LLM 模型。
-    *   `EMBEDDING_MODEL_NAME`: 從 Hugging Face 下載的嵌入模型。
-    *   `PERSIST_DIRECTORY`: 向量資料庫的儲存資料夾。
+4. **啟動應用程序**
+   ```bash
+   python run.py
+   ```
 
-*   **RAG 調優參數:**
-    *   `VECTOR_SEARCH_K` & `BM25_SEARCH_K`: 從每種搜尋方法中檢索的結果數量。
-    *   `ENSEMBLE_WEIGHTS`: 分配給向量搜尋與關鍵詞搜尋的權重。
+5. **開啟介面**
+   瀏覽器中輸入：
+   ```
+   http://127.0.0.1:5000
+   ```
 
-## 📂 專案結構
+---
+
+## 🔧 配置檔案說明
+
+修改 `config.py` 中的參數進行自訂：
+
+### 核心設定
+
+| 參數名稱              | 說明 |
+|-----------------------|------|
+| `DEFAULT_MODEL`       | 啟動時預設使用的 LLM 模型 |
+| `EMBEDDING_MODEL_NAME`| HuggingFace 中的嵌入式模型名稱 |
+| `PERSIST_DIRECTORY`   | ChromaDB 向量儲存路徑 |
+
+### 搜尋調整參數
+
+| 參數名稱              | 說明 |
+|-----------------------|------|
+| `VECTOR_SEARCH_K`     | 向量搜尋返回結果數目 |
+| `BM25_SEARCH_K`       | BM25 搜尋返回結果數目 |
+| `ENSEMBLE_WEIGHTS`    | 向量與關鍵字搜索結果合成時的權重分配比例 |
+
+---
+
+## 📂 專案架構
+
 ```
 /
 ├── app/
-│   ├── __init__.py      # 初始化 Flask App
-│   ├── routes.py        # 包含所有 Flask 路由和 API 端點
-│   ├── services.py      # 包含核心的 ConversationalRAG 類別
-│   ├── static/          # 用於存放 CSS/JS 檔案
-│   └── templates/
-│       └── index.html   # 前端 UI 的單頁 HTML 檔案
-├── config.py            # 所有使用者可配置的設定
-├── run.py               # 啟動應用程式的主要進入點
-├── requirements.txt     # Python 依賴套件列表
-└── README.md            # 本說明檔案
+│ ├── init.py      # Flask 初始化
+│ ├── routes.py        # API 端點定義
+│ ├── services.py      # 主要業務邏輯：ConversationalRAG 類別
+│ ├── static/          # 前端 CSS & JS 資料夾
+│ ├── templates/
+│ │ └── index.html       # 單頁式介面 HTML 檔案
+│ └── prompts/           # 存放所有代理程式的提示範本（.txt 檔案）
+├── config.py            # 可變動設定檔
+├── run.py               # 啟動腳本入口點
+├── requirements.txt     # 所需 Python 套件清單
+└── README.md            # 說明文件（就是這個！）
 ```
+
+---
 
 ## 🤝 貢獻指南
 
