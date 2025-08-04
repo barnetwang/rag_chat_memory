@@ -289,7 +289,11 @@
             display: flex;
             align-items: center;
             padding: 0.9rem 1.25rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .light-mode .toggle-switch-container {
+            border-bottom: 1px solid var(--border-color);
         }
 
         .toggle-switch-container:last-child {
@@ -702,7 +706,7 @@
         .pagination-btn:hover:not(:disabled) {
             background-color: var(--accent-color);
             border-color: var(--accent-color);
-            color: #fff; /* 在淺色模式下，懸停時文字要變白色才看得到 */
+            color: #fff;
         }
 
         .pagination-btn:disabled {
@@ -808,6 +812,13 @@
                             <span id="model-status"></span>
                         </div>
                         <div class="card-body no-padding">
+						<div class="toggle-switch-container">
+                             <input type="checkbox" id="web-search-toggle" class="toggle-input" checked>
+                             <label for="web-search-toggle" class="toggle-label">
+                                 <span class="slider"></span>
+                                 <span class="toggle-text">啟用研究</span>
+                             </label>
+                        </div>
                             <div class="toggle-switch-container">
                                 <input type="checkbox" id="scraper-toggle" class="toggle-input" checked>
                                 <label for="scraper-toggle" class="toggle-label">
@@ -836,7 +847,7 @@
                     <div class="card">
                         <h3 class="card-header">文件上傳</h3>
                         <div class="card-body upload-container" id="upload-container">
-                            <label for="file-upload" class="upload-label">拖拽文件或点击上传</label>
+                            <label for="file-upload" class="upload-label">拖拽文件或點擊上傳</label>
                             <input id="file-upload" type="file" accept=".pdf,.doc,.docx,.txt,.md,.html,.pptx" style="display: none;">
                             <button id="upload-btn">上傳並處理</button>
                             <div id="upload-status"></div>
@@ -871,7 +882,7 @@
     <script>
         // --- Global Vars ---
         let chatBox, chatInput, submitButton, modelSelector, modelStatus, clearChatBtn;
-        let historyToggle, wikipediaToggle, scraperToggle;
+		let historyToggle, wikipediaToggle, scraperToggle, webSearchToggle;
         let uploadBtn, fileInput, uploadStatus;
         let allRecords = [];
         let currentPage = 1;
@@ -888,10 +899,11 @@
             historyToggle = document.getElementById('history-toggle');
             wikipediaToggle = document.getElementById('wikipedia-toggle');
             scraperToggle = document.getElementById('scraper-toggle');
+			webSearchToggle = document.getElementById('web-search-toggle');
             uploadBtn = document.getElementById('upload-btn');
             fileInput = document.getElementById('file-upload');
             uploadStatus = document.getElementById('upload-status');
-
+            webSearchToggle.addEventListener('change', () => handleToggleChange(webSearchToggle, '/api/set_web_search'));
             historyToggle.addEventListener('change', () => handleToggleChange(historyToggle, '/api/set_history'));
             wikipediaToggle.addEventListener('change', () => handleToggleChange(wikipediaToggle, '/api/set_wikipedia'));
             scraperToggle.addEventListener('change', () => handleToggleChange(scraperToggle, '/api/set_scraper'));
@@ -952,6 +964,7 @@
                     modelSelector.disabled = false;
                     submitButton.disabled = false;
                 }
+				webSearchToggle.checked = data.web_search_enabled;
                 historyToggle.checked = data.history_enabled;
                 wikipediaToggle.checked = data.wikipedia_enabled;
                 scraperToggle.checked = data.scraper_enabled;
@@ -1089,38 +1102,75 @@
             sourcesContainer.className = 'sources-container';
             const title = document.createElement('h4');
             sourcesContainer.appendChild(title);
-            const groupedSources = {};
+            const uniqueSources = {};
             sources.forEach(source => {
-                let displayName = source.metadata.source.split(/[\\/]/).pop();
-                if (displayName === 'conversation' && source.metadata.timestamp) {
+                let displayName;
+                let url = source.metadata.url || source.metadata.source;
+
+                if (source.metadata.source.startsWith("網頁瀏覽: ")) {
+                    url = source.metadata.source.replace("網頁瀏覽: ", "");
+                    try {
+                        displayName = new URL(url).hostname.replace('www.', '');
+                    } catch (e) {
+                        displayName = url;
+                    }
+                } else if (source.metadata.source === 'conversation' && source.metadata.timestamp) {
                     displayName = `歷史對話 (${source.metadata.timestamp})`;
+                } else {
+                    displayName = source.metadata.source.split(/[\\/]/).pop();
                 }
-                if (!groupedSources[displayName]) groupedSources[displayName] = [];
-                groupedSources[displayName].push(source.page_content);
+                
+                if (!uniqueSources[displayName]) {
+                    uniqueSources[displayName] = {
+                        contents: [],
+                        url: url
+                    };
+                }
+                uniqueSources[displayName].contents.push(source.page_content);
             });
-            const keywords = userQuestion.split(/\s+/).filter(word => word.length > 2 && !/^[a-zA-Z0-9-_]+$/.test(word));
+
+            const keywords = userQuestion.split(/\s+/).filter(word => word.length > 2);
             const regex = keywords.length > 0 ? new RegExp(`(${keywords.join('|')})`, 'gi') : null;
-            for (const [displayName, contents] of Object.entries(groupedSources)) {
+
+            for (const [displayName, data] of Object.entries(uniqueSources)) {
                 const sourceItem = document.createElement('div');
                 sourceItem.className = 'source-item';
-                sourceItem.textContent = `來源: ${displayName}`;
-                sourceItem.addEventListener('click', () => {
-                    let contentContainer = sourceItem.querySelector('.source-content-container');
-                    if (!contentContainer) {
-                        contentContainer = document.createElement('div');
-                        contentContainer.className = 'source-content-container';
-                        contents.forEach(content => {
-                            const contentDiv = document.createElement('div');
-                            contentDiv.className = 'source-content';
-                            let highlightedContent = escapeHtml(content);
-                            if (regex) highlightedContent = highlightedContent.replace(regex, `<mark>$1</mark>`);
-                            contentDiv.innerHTML = highlightedContent;
-                            container.appendChild(contentDiv);
-                        });
-                        sourceItem.appendChild(contentContainer);
+                
+                const link = document.createElement('a');
+                link.textContent = `來源: ${displayName}`;
+                link.className = 'source-link';
+                if (data.url && data.url.startsWith('http')) {
+                    link.href = data.url;
+                    link.target = '_blank';
+                    link.title = `點擊前往: ${data.url}`;
+                }
+                sourceItem.appendChild(link);
+
+                const contentContainer = document.createElement('div');
+                contentContainer.className = 'source-content-container';
+                
+                data.contents.forEach(content => {
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'source-content';
+                    let highlightedContent = escapeHtml(content);
+                    if (regex) {
+                        highlightedContent = highlightedContent.replace(regex, `<mark>$1</mark>`);
                     }
-                    contentContainer.style.display = contentContainer.style.display === 'block' ? 'none' : 'block';
+                    contentDiv.innerHTML = highlightedContent;
+                    contentContainer.appendChild(contentDiv);
                 });
+                
+                sourceItem.appendChild(contentContainer);
+                
+                const previewToggle = document.createElement('span');
+                previewToggle.textContent = ' (預覽)';
+                previewToggle.className = 'source-preview-toggle';
+                previewToggle.onclick = (e) => {
+                    e.stopPropagation();
+                    contentContainer.style.display = contentContainer.style.display === 'block' ? 'none' : 'block';
+                };
+                sourceItem.appendChild(previewToggle);
+
                 sourcesContainer.appendChild(sourceItem);
             }
             messageWrapper.insertBefore(sourcesContainer, messageWrapper.firstChild);
@@ -1362,7 +1412,8 @@
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
-                .replace(/"/g, '&#039;');
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
         }
 
         function toggleTheme() {
