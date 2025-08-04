@@ -2,46 +2,45 @@
 flask
 requests
 
-# Web Scraping & APIs
-beautifulsoup4
-wikipedia
-
-# --- Web Search Engine Tool ---
-# Free and powerful search tool for our Research Agent
-ddgs
-
-# --- Core AI & Orchestration ---
-# Main LangChain library
+# --- AI & Orchestration Framework ---
+# Main LangChain library and its core components
 langchain
-# Core components (Runnable, Schema, etc.)
 langchain-core
-# Community-maintained integrations (loaders, retrievers, etc.)
 langchain-community
-# Ollama integration for LLMs
+# Ollama integration for local LLMs
 langchain-ollama
 # ChromaDB vector store integration
 langchain-chroma
-# HuggingFace integrations (Embeddings)
+# HuggingFace integrations (e.g., for Embeddings)
 langchain-huggingface
 
-# --- Embeddings & Machine Learning ---
+# --- Embeddings & Machine Learning Backend ---
 # Core library for running local embedding models
 sentence-transformers
-# For downloading models from the Hub
-huggingface-hub
-# PyTorch is required by sentence-transformers
+# Required by sentence-transformers
 torch
+huggingface-hub
 
 # --- Vector Database ---
 chromadb
 
+# --- Web Scraping & Search ---
+# Powerful web scraping and browser automation
+playwright
+# For parsing HTML content
+beautifulsoup4
+# Free and powerful search engine API for the Research Agent
+duckduckgo-search
+# Wikipedia API wrapper
+wikipedia
+
 # --- Document Processing ---
 # For handling various document formats like DOCX, PPTX, etc.
 unstructured
-# Specialized, high-performance PDF parsing
+# Specialized, high-performance PDF parsing library (used by our crawler)
+PyMuPDF
+# Another PDF library, often a dependency for unstructured
 pypdf
-# For advanced PDF text extraction (recommended over unstructured[pdf])
-pymupdf
 
 # --- Local Search & Retrieval ---
 # For BM25 keyword search implementation in the hybrid retriever
