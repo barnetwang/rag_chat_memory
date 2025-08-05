@@ -1,18 +1,13 @@
-<div align="right">
-  <b><a href="#-english-readme">English</a></b> | <b><a href="#-中文說明">中文</a></b>
-</div>
+# 🧠 Local LLM Autonomous Research Agent - v3.0
+**[English]** | [中文說明](#-中文說明)
 
-<a name="-english-readme"></a>
+---
 
-# Local LLM RAG Web UI
-
-**An intelligent, high-performance, 100% local, and private Retrieval-Augmented Generation (RAG) web interface powered by Ollama and LangChain.**
+## 🚀 Introduction
 
 This project has evolved beyond a simple RAG UI into a powerful, **autonomous AI research assistant** that runs 100% locally on your machine. It leverages a multi-agent "Expert Team" workflow to transform a single complex question into a detailed, well-researched, and fully-cited report.
 
 Designed for privacy, cost-effectiveness, and professional-grade output, this tool is your personal, automated strategy consultant.
-
-![image](https://github.com/user-attachments/assets/b0f520a6-6422-46d1-aebb-2a4e308ab83c)
 
 ---
 
@@ -77,7 +72,7 @@ Designed for privacy, cost-effectiveness, and professional-grade output, this to
 4.  **Pull Required Ollama Models**
     Edit `config.py` to set your preferred models, then download them. For example:
     ```bash
-    ollama pull qwen3:latest       # Main LLM for generation
+    ollama pull qwen2:7b-instruct       # Main LLM for generation
     ollama pull nomic-embed-text      # Embedding model
     ```
 
@@ -128,25 +123,20 @@ Follow these steps:
 This project is open-source and uses various third-party libraries.
 
 Please review their licenses carefully before using this code for commercial purposes.
+
 ---
-<br>
 
-<details>
-<summary><b>中文說明 (點擊展開)</b></summary>
+# 中文說明
 
-<a name="-中文說明"></a>
-
-# 本地端 LLM RAG 整合介面
-
-**一個智能、高性能、100% 本地運行、注重隱私的檢索增強生成 (RAG) 網頁應用程式，由 Ollama 與 LangChain 驅動。**
+## 🧠 本地端 LLM 自主 AI 研究員 - v3.0
 
 本專案已進化為一個強大的**自主 AI 研究助理**，能夠 100% 在您的本機上運行。它利用一個「專家小組」多智能體工作流，將一個複雜的問題，轉化為一份詳細、研究充分、且引用來源完整的深度報告。
 
 專為注重隱私、成本效益和專業級輸出的使用者設計，此工具是您的個人自動化策略顧問。
 
-![image](https://github.com/user-attachments/assets/b0f520a6-6422-46d1-aebb-2a4e308ab83c)
-
 ---
+
+## 🌟 核心功能
 
 *   **🤖 自主「專家小組」工作流**: 本系統的核心創新。使用者的一個複雜問題將觸發一套精密的自動化流程：
     1.  **路由器 (Router)**: 智能識別需要深度研究的複雜任務。
@@ -209,7 +199,7 @@ Please review their licenses carefully before using this code for commercial pur
 
    修改 `config.py` 中的預設模型設定後進行下載：
    ```bash
-   ollama pull qwen3:latest          # 默認 LLM 模型
+   ollama pull gemma:2b          # 默認 LLM 模型
    oollama pull nomic-embed-text  # 默認嵌入模型（如需使用）
    ```
 
@@ -270,10 +260,20 @@ Please review their licenses carefully before using this code for commercial pur
 
 ## 🤝 貢獻指南
 
-歡迎任何形式的貢獻！請遵循標準的 Fork 和 Pull Request 工作流程。
+歡迎各位參與開發！
 
-## ⚖️ 授權與致謝
+操作流程如下：
 
-本專案為開源專案，其依賴的多個第三方套件擁有各自的授權條款。在將本專案用於商業目的前，請務必詳細閱讀並遵守。
+1. Fork 此倉儲
+2. 建立新分支：`git checkout -b feature/your-feature`
+3. 提交變更：`git commit -am 'Add some feature'`
+4. 推送到分支：`git push origin feature/your-feature`
+5. 開啟 Pull Request
 
-</details>
+---
+
+## ⚖️ 授權與感謝
+
+此專案為開源項目，使用了多個第三方函式庫。
+
+請仔細閱讀其授權條款，在商業用途前務必審視清楚。
