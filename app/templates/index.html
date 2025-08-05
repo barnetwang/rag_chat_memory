@@ -781,7 +781,7 @@
                     <div id="chat-box">
                         <div class="message bot-message">
                             <div class="message-wrapper">
-                                <div class="content">你好！我是您的 RAG 助理。您可以從右側面板選擇模型、設定功能或上傳文件來開始對話。</div>
+                                <div class="content">你好！我是您的 RAG 助理。您可以從右側面板選擇模型、設定功能或上傳文件來開始對話。---AI 可能會出錯請查核重要資訊</div>
                             </div>
                         </div>
                     </div>
@@ -887,6 +887,7 @@
         let allRecords = [];
         let currentPage = 1;
         let searchDebounceTimer;
+        let fullMarkdownResponse = '';
 
         // --- Init Function ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -903,10 +904,10 @@
             uploadBtn = document.getElementById('upload-btn');
             fileInput = document.getElementById('file-upload');
             uploadStatus = document.getElementById('upload-status');
-            webSearchToggle.addEventListener('change', () => handleToggleChange(webSearchToggle, '/api/set_web_search'));
-            historyToggle.addEventListener('change', () => handleToggleChange(historyToggle, '/api/set_history'));
-            wikipediaToggle.addEventListener('change', () => handleToggleChange(wikipediaToggle, '/api/set_wikipedia'));
-            scraperToggle.addEventListener('change', () => handleToggleChange(scraperToggle, '/api/set_scraper'));
+            webSearchToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_web_search'));
+            historyToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_history'));
+            wikipediaToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_wikipedia'));
+            scraperToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_scraper'));
             modelSelector.addEventListener('change', handleModelChange);
             clearChatBtn.addEventListener('click', handleClearChat);
             uploadBtn.addEventListener('click', handleFileUpload);
@@ -968,6 +969,7 @@
                 historyToggle.checked = data.history_enabled;
                 wikipediaToggle.checked = data.wikipedia_enabled;
                 scraperToggle.checked = data.scraper_enabled;
+                syncUIToggles();
             } catch (error) {
                 console.error('載入設定失敗:', error);
                 modelStatus.textContent = "與後端連線失敗";
@@ -984,11 +986,36 @@
                     body: JSON.stringify({ enabled: toggleElement.checked })
                 });
                 if (!response.ok) throw new Error('伺服器切換失敗');
+                syncUIToggles(toggleElement);
             } catch (error) {
                 console.error(`切換失敗:`, error);
                 toggleElement.checked = !toggleElement.checked;
             }
         }
+
+        function syncUIToggles(changedElement) {
+            // 獲取所有開關的當前狀態
+            const isWebSearchOn = webSearchToggle.checked;
+            
+            if (changedElement) { // 如果是由用戶點擊觸發
+                if (changedElement.id === 'web-search-toggle' && isWebSearchOn) {
+                    // 當「啟用研究」被打開時，關閉並禁用其他三個
+                    historyToggle.checked = false;
+                    wikipediaToggle.checked = false;
+                    scraperToggle.checked = false;
+                } else if (['history-toggle', 'wikipedia-toggle', 'scraper-toggle'].includes(changedElement.id) && changedElement.checked) {
+                    // 當其他三個中任意一個被打開時，關閉「啟用研究」
+                    webSearchToggle.checked = false;
+                }
+            }
+            
+            // 根據「啟用研究」的最終狀態，決定其他開關是否可交互
+            const shouldDisableOthers = webSearchToggle.checked;
+            historyToggle.disabled = shouldDisableOthers;
+            wikipediaToggle.disabled = shouldDisableOthers;
+            scraperToggle.disabled = shouldDisableOthers;
+        }
+
 
         async function handleModelChange(event) {
             const selectedModel = event.target.value;
@@ -1195,12 +1222,12 @@
             botMessageWrapper.insertBefore(thinkBlock, botContentDiv);
             const thinkContentDiv = thinkBlock.querySelector('.thinking-content');
 
-            let fullBotResponse = '';
+            fullMarkdownResponse = '';
             let animationFrameId = null;
 
             const render = () => {
-                const thinkStartIndex = fullBotResponse.indexOf('<think>');
-                const thinkEndIndex = fullBotResponse.indexOf('</think>');
+                const thinkStartIndex = fullMarkdownResponse.indexOf('<think>');
+                const thinkEndIndex = fullMarkdownResponse.indexOf('</think>');
 
                 let thinkText = '';
                 let answerText = '';
@@ -1208,17 +1235,17 @@
                 if (thinkStartIndex !== -1) {
                     thinkBlock.style.display = 'block';
                     if (thinkEndIndex !== -1 && thinkEndIndex > thinkStartIndex) {
-                        thinkText = fullBotResponse.substring(thinkStartIndex + 7, thinkEndIndex);
-                        answerText = fullBotResponse.substring(thinkEndIndex + 8);
+                        thinkText = fullMarkdownResponse.substring(thinkStartIndex + 7, thinkEndIndex);
+                        answerText = fullMarkdownResponse.substring(thinkEndIndex + 8);
                     } else {
-                        thinkText = fullBotResponse.substring(thinkStartIndex + 7);
+                        thinkText = fullMarkdownResponse.substring(thinkStartIndex + 7);
                     }
                 } else {
-                    answerText = fullBotResponse;
+                    answerText = fullMarkdownResponse;
                 }
 
                 thinkContentDiv.textContent = thinkText.trimStart();
-                botContentDiv.textContent = answerText.trimStart();
+                botContentDiv.innerHTML = marked.parse(answerText.trimStart());
 
                 chatBox.scrollTop = chatBox.scrollHeight;
                 animationFrameId = null;
@@ -1240,10 +1267,10 @@
                         eventSource.close();
                         submitButton.disabled = false;
 
-                        const finalText = botContentDiv.textContent;
-                        if (finalText) {
-                            botContentDiv.innerHTML = marked.parse(finalText);
-                        }
+                        //const finalText = botContentDiv.textContent;
+                        //if (finalText) {
+                        //    botContentDiv.innerHTML = marked.parse(finalText);
+                        //}
 
                         if (animationFrameId) {
                             cancelAnimationFrame(animationFrameId);
@@ -1257,7 +1284,7 @@
                     if (data.type === 'sources') {
                         appendSources(botMessageWrapper, data.data, question);
                     } else if (data.type === 'content' && data.content) {
-                        fullBotResponse += data.content;
+                        fullMarkdownResponse += data.content;
                         if (!animationFrameId) {
                             animationFrameId = requestAnimationFrame(render);
                         }
