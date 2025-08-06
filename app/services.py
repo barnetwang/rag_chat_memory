@@ -727,37 +727,53 @@ class ConversationalRAG:
               logging.info(f"--- 大綱生成器回應 (嘗試 {attempt + 1}) ---\n{blueprint_str}\n--------------------")
               try:
                   match = re.search(r"```json\s*(\{.*?\})\s*```", blueprint_str, re.DOTALL) or re.search(r"(\{.*\})", blueprint_str, re.DOTALL)
-                  if not match: raise json.JSONDecodeError("輸出中找不到 JSON。", blueprint_str, 0)
+                  if not match:
+                      raise json.JSONDecodeError("輸出中找不到 JSON 結構。", blueprint_str, 0)
                   blueprint_json = json.loads(match.group(1))
                   logging.info(f"✅ 成功解析回答大綱 JSON。")
                   break
               except json.JSONDecodeError as e:
-                  logging.warning(f"❌ 解析 JSON 失敗 (嘗試 {attempt + 1}): {e}")
+                  logging.warning(f"❌ 解析 JSON 失敗 (嘗試 {attempt + 1}): {e}\n原始輸出:\n{blueprint_str}")
           if blueprint_json is None: raise ValueError("在 3 次嘗試後仍無法解析 JSON。")
 
           yield f"data: {json.dumps({'type': 'status', 'message': '步驟 4/4: 正在撰寫最終報告...'})}\n\n"
-          
+      
           final_writer_template = self.prompts.get('final_report_writer')
+          if not final_writer_template:
+            raise ValueError("關鍵的 'final_report_writer.txt' 模板未找到！")
           final_report_prompt = final_writer_template.format(
               question=question,
               context=final_context,
-              blueprint=json.dumps(blueprint_json, indent=2, ensure_ascii=False) # 將漂亮的 JSON 大綱作為字串傳入
+              blueprint=json.dumps(blueprint_json, indent=2, ensure_ascii=False),
+              #references=reference_list_str
           )
 
-          full_answer = ""
+          full_answer_body = ""
           for chunk in self.llm.stream(final_report_prompt):
-              full_answer += chunk
+              full_answer_body += chunk
               yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
       
           logging.info("報告串流生成完畢！正在進行最終清理與儲存...")
 
-          final_cleaned_answer = re.sub(r"<think>.*?</think>", "", full_answer, flags=re.DOTALL).strip()
+          unique_urls = set()
+          for doc in all_source_documents:
+              source = doc.metadata.get('source', '')
+              if source.startswith("網頁瀏覽: "):
+                  url = source.replace("網頁瀏覽: ", "").strip()
+                  if url: unique_urls.add(url)
+          reference_list_str = "\n".join([f"- {url}" for url in sorted(list(unique_urls))])
+          reference_section_str = f"\n\n---\n\n## 參考文獻\n{reference_list_str}"
+          logging.info(f"✅ 已提取 {len(unique_urls)} 條獨特的參考文獻。")
       
+          yield f"data: {json.dumps({'type': 'content', 'content': reference_section_str})}\n\n"
+          cleaned_body = re.sub(r"<think>.*?</think>", "", full_answer_body, flags=re.DOTALL).strip()
+          final_complete_report = cleaned_body + reference_section_str
+          
           if all_source_documents:
-              yield f"data: {json.dumps({'type': 'sources', 'data': [{'page_content': doc.page_content, 'metadata': doc.metadata} for doc in all_source_documents]})}\n\n"
+              yield f"data: {json.dumps({'type': 'sources', 'data': [{'page_content': '...', 'metadata': doc.metadata} for doc in all_source_documents]})}\n\n"
 
-          if final_cleaned_answer:
-              self.save_qa(question, final_cleaned_answer)
+          if final_complete_report.strip():
+              self.save_qa(question, final_complete_report)
           
           yield f"data: {json.dumps({'type': 'status', 'message': '報告生成完畢！'})}\n\n"
 
