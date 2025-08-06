@@ -20,6 +20,7 @@ sentence-transformers
 # Required by sentence-transformers
 torch
 huggingface-hub
+waitress
 
 # --- Vector Database ---
 chromadb
