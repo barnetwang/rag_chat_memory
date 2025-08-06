@@ -18,17 +18,18 @@ def get_models_and_settings():
         "current_model": rag_chat.current_llm_model,
         "history_enabled": rag_chat.use_history,
         "wikipedia_enabled": rag_chat.use_wikipedia,
-        "scraper_enabled": rag_chat.use_scraper,
         "web_search_enabled": rag_chat.use_web_search
     })
 
 @main.route('/api/set_web_search', methods=['POST'])
 def set_web_search():
-#    rag_class = g.get('rag_class')
     if not rag_chat:
         return jsonify({"success": False, "error": "RAG service not initialized"}), 503
     enabled = request.json.get('enabled', False)
     rag_chat.set_web_search(enabled)
+    if enabled:
+        rag_chat.set_history_retrieval(False)
+        rag_chat.set_wikipedia_search(False)
     return jsonify({"success": True, "message": f"Web search set to {enabled}"})
     
 @main.route('/api/set_model', methods=['POST'])
@@ -52,13 +53,6 @@ def set_wikipedia():
     data = request.get_json(); enabled = data.get('enabled')
     if not isinstance(enabled, bool): return jsonify({"success": False, "error": "無效的參數"}), 400
     rag_chat.set_wikipedia_search(enabled); return jsonify({"success": True})
-
-@main.route('/api/set_scraper', methods=['POST'])
-def set_scraper():
-    if not rag_chat: return jsonify({"success": False, "error": "RAG service not initialized"}), 503
-    data = request.get_json(); enabled = data.get('enabled')
-    if not isinstance(enabled, bool): return jsonify({"success": False, "error": "無效的參數"}), 400
-    rag_chat.set_scraper_search(enabled); return jsonify({"success": True})
 
 @main.route('/ask', methods=['GET'])
 def handle_ask():

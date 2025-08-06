@@ -59,7 +59,6 @@ class ConversationalRAG:
         self.use_web_search = True
         self.use_wikipedia = False
         self.use_history = False
-        self.use_scraper = False
         self.ollama_base_url = self.config["OLLAMA_BASE_URL"]
         self.prompts = {}
         self.all_docs_for_bm25 = []
@@ -185,7 +184,6 @@ class ConversationalRAG:
         if enabled:
             self.use_history = False
             self.use_wikipedia = False
-            self.use_scraper = False
             logging.info("   -> (自動) 已停用歷史記錄、維基百科和URL爬蟲，進入純網路搜尋模式。")
         return True
 
@@ -198,16 +196,8 @@ class ConversationalRAG:
         return True
 
     def set_wikipedia_search(self, enabled: bool):
-        logging.info(f"🔄 將維琪百科搜索設置為: {'啟用' if enabled else '停用'}")
+        logging.info(f"🔄 將維基搜索設置為: {'啟用' if enabled else '停用'}")
         self.use_wikipedia = enabled
-        if enabled:
-            self.use_web_search = False
-            logging.info("   -> (自動) 已停用網路搜尋。")
-        return True
-
-    def set_scraper_search(self, enabled: bool):
-        logging.info(f"🔄 將網頁爬蟲設置為: {'啟用' if enabled else '停用'}")
-        self.use_scraper = enabled
         if enabled:
             self.use_web_search = False
             logging.info("   -> (自動) 已停用網路搜尋。")
@@ -359,15 +349,12 @@ class ConversationalRAG:
             try:
                 browser = playwright.chromium.launch(headless=True)
                 with DDGS() as ddgs:
-                    # 獲取更多結果以便過濾
                     search_results = ddgs.text(question, max_results=20, region="tw-zh")
                 if not search_results: return []
-                
-                # --- [核心修改] 過濾掉黑名單中的網址 ---
                 urls_to_browse = [
                     res["href"] for res in search_results 
                     if "href" in res and not any(blacklisted in res["href"] for blacklisted in DOMAIN_BLACKLIST)
-                ][:10] # 取過濾後的前10個
+                ][:10]
                 # ------------------------------------------
 
                 logging.info(f"   -> 已過濾掉黑名單網站，準備瀏覽以下 {len(urls_to_browse)} 個網頁...")
@@ -413,7 +400,8 @@ class ConversationalRAG:
             page = None
             try:
                 if any(url.lower().endswith(ext) for ext in ['.doc', '.docx', '.zip', '.rar', '.xls', '.xlsx']):
-                     raise Exception(f"文件類型 ({url})，跳過 Playwright。")
+                     return "無法爬取網站，錯誤: 不支持的文件類型"
+                     #raise Exception(f"文件類型 ({url})，跳過 Playwright。")
                 page = browser.new_page()
                 page.goto(url, timeout=30000, wait_until='domcontentloaded')
 
@@ -430,10 +418,13 @@ class ConversationalRAG:
                 for element in soup(["script", "style", "nav", "footer", "aside", "header", "iframe", "form"]):
                     element.decompose()
                 text = "\n".join(line.strip() for line in soup.get_text().splitlines() if line.strip())
+                if len(text) < 300:
+                    logging.warning(f"⚠️ (Playwright) 从 {url} 提取的有效文字过少 ({len(text)} 字元)，可能不是主要内容。")
                 logging.info(f"✅ (Playwright) 成功獲取網頁文字，長度: {len(text)} 字元。")
                 return text
             except Exception as e:
                 logging.warning(f"❌ (Playwright) 失敗: {e}。將回退至 Requests 模式。")
+                return "無法爬取網站，錯誤: 無法連接到伺服器"
             finally:
                 if page and not page.is_closed():
                     page.close()
@@ -447,8 +438,9 @@ class ConversationalRAG:
             for element in soup(["script", "style", "nav", "footer", "aside", "header", "iframe", "form"]):
                 element.decompose()
             text = "\n".join(line.strip() for line in soup.get_text().splitlines() if line.strip())
-            if not text:
+            if not text or len(text) < 300:
                 logging.warning(f"⚠️ (Requests) 未能從 {url} 提取到任何有效文字。")
+                return "無法爬取網站，錯誤: 網頁內容過少或無效"
             else:
                 logging.info(f"✅ (Requests) 成功獲取網頁文字，長度: {len(text)} 字元。")
             return text
@@ -467,14 +459,6 @@ class ConversationalRAG:
 
     def _get_rag_context(self, question: str, retrieval_query: str):
         all_source_docs, context_parts = [], []
-        if self.use_scraper:
-            if url_match := re.search(r"https?://[\S]+", question):
-                url = url_match.group(0)
-                web_content = self._scrape_webpage_text(url, browser=None)
-                if "無法爬取" not in web_content:
-                    doc = Document(page_content=web_content, metadata={"source": f"網頁: {url}"})
-                    all_source_docs.append(doc)
-                    context_parts.append(f"來源：{doc.metadata['source']}\n內容：\n{doc.page_content}")
         if self.use_wikipedia:
             wiki_content = self._search_wikipedia(question)
             if "無相關資料" not in wiki_content:
@@ -489,13 +473,51 @@ class ConversationalRAG:
                 context_parts.append("[相關資料庫內容]:\n" + "\n---\n".join([f"來源：{doc.metadata.get('source', '未知')}\n內容：\n{doc.page_content}" for doc in db_docs]))
         return "\n\n".join(context_parts) if context_parts else "沒有可用的上下文資料。", all_source_docs
 
+    def _stream_direct_message(self, message: str):
+        """一個可靠的、用於向前端發送單條消息的生成器。"""
+        try:
+            yield f"data: {json.dumps({'type': 'content', 'content': message})}\n\n"
+        except Exception as e:
+            logging.error(f"❌ 在串流直接訊息時發生錯誤: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+        finally:
+            yield f"data: [DONE]\n\n"
+
+    def stream_and_save(self, question: str, prompt: str, source_documents: list):
+        """
+        一個可重用的、用於串流生成答案並在結束後儲存QA對的核心輔助函式。
+        """
+        full_answer = ""
+        try:
+            if source_documents:
+                yield f"data: {json.dumps({'type': 'sources', 'data': [{'page_content': doc.page_content, 'metadata': doc.metadata} for doc in source_documents]})}\n\n"
+            
+            for chunk in self.llm.stream(prompt):
+                full_answer += chunk
+                yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+            
+            if full_answer.strip():
+                self.save_qa(question, full_answer)
+                
+        except Exception as e:
+            logging.error(f"❌ 在 stream_and_save 過程中發生錯誤: {e}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+        finally:
+            yield f"data: [DONE]\n\n"
+
     def ask(self, question: str, stream: bool = True):
         logging.info(f"\n🤔 收到請求，問題: '{question}'")
-        
-        # --- 步驟 1: 路由器決策 ---
+        url_match = re.search(r"https?://[\S]+", question)
+        if url_match:
+            url = url_match.group(0)
+            logging.info(f"🔗 KAIZEN 路由：檢測到 URL，自動升格為複雜研究任務。")
+            rewritten_question = f"請為我撰寫一份關於以下網址內容的深度總結報告：{url}。報告需要提煉出其核心觀點、關鍵信息和主要論據。"
+            return self._handle_complex_project(rewritten_question, stream)
+            
+        logging.info("🧠 未檢測到 URL，轉交 LLM 路由器進行決策...")
         router_template = self.prompts.get('router')
         router_prompt_string = router_template.format(question=question)
-        path, persona = "rag_query", "default_rag" # 預設值
+        path, persona = "rag_query", "default_rag" 
         try:
             raw_route_output = self.llm.invoke(router_prompt_string)
             logging.info(f"🚦 路由器原始決策: {raw_route_output}")
@@ -509,49 +531,36 @@ class ConversationalRAG:
         except Exception as e:
             logging.error(f"🚦 路由器決策失敗: {e}, 將走預設 RAG 路徑。")
 
-        # --- 步驟 2: 根據路由執行對應工作流 (嚴格的 if/elif/else 結構) ---
         main_prompt_template = self.prompts.get(persona) or self.prompts.get('default_rag')
         if not main_prompt_template:
             return self._stream_direct_message("系統錯誤：找不到對應的角色模板。")
 
         if path == "complex_project_query":
-            # 複雜研究：只執行專家小組工作流，該流程內部只會進行即時網路研究，
-            # 完美實現了「專注模式」。
             return self._handle_complex_project(question, stream)
 
         elif path == "web_search_query":
-            # 通用網路搜尋：只在使用者啟用時執行。
             logging.info(f"🌐 走通用網路搜索 RAG 路徑 (使用角色: {persona})...")
             if not self.use_web_search:
                  return self._stream_direct_message("網路搜尋功能目前已停用。")
-                 
             keyword_chain = self.prompts['web_search_generation'] | self.llm | StrOutputParser()
-            # 注意：對於簡單Web搜尋，task和question是同一個
-            search_keywords_raw = keyword_chain.invoke({"question": question, "task": question})
-            search_keywords = re.sub(r"<think>.*?</think>|\[.*?\]:", "", search_keywords_raw, flags=re.DOTALL).strip()
-            
+            search_keywords = keyword_chain.invoke({"question": question, "task": question}).strip()
             search_docs = self._agent_based_web_search(search_keywords)
             if not search_docs:
                 return self._stream_direct_message("抱歉，我嘗試透過網路搜尋，但未能獲取到相關資訊。")
-                
             context = "[網路搜索結果]:\n" + "\n---\n".join([f"來源：{doc.metadata.get('source', '網路')}\n內容：\n{doc.page_content}" for doc in search_docs])
             prompt = main_prompt_template.format(context=context, question=question)
             return self.stream_and_save(question, prompt, search_docs)
 
         elif path == "rag_query":
-            # 本地知識庫查詢：只查詢本地資料庫，混合歷史、維基等。
             logging.info(f"📚 走本地 RAG 路徑 (使用角色: {persona})...")
             query_chain = self.prompts['query_expansion'] | self.llm | StrOutputParser()
             expanded_query = query_chain.invoke({"original_query": question}).strip()
             retrieval_query = f"{question}\n{expanded_query}"
-            
-            # _get_rag_context 會根據 use_history, use_wikipedia 等開關決定上下文
             context, source_docs = self._get_rag_context(question, retrieval_query)
             prompt = main_prompt_template.format(context=context, question=question)
             return self.stream_and_save(question, prompt, source_docs)
 
-        else: # direct_answer_query or general_conversation
-            # 直接回答或通用對話：不使用任何外部資料。
+        else: 
             logging.info(f"💬 走直接/通用對話路徑 (使用角色: {persona})...")
             prompt = main_prompt_template.format(context="沒有可用的上下文資料。", question=question)
             return self.stream_and_save(question, prompt, [])
@@ -562,34 +571,26 @@ class ConversationalRAG:
         基於原則進行解析，能夠處理多種不斷進化的 JSON 結構。
         核心原則：利用 AI 生成的「目錄」或「章節列表」作為尋找章節的路線圖。
         """
-        logging.info("➡️ 進入 [V7-終極自適應] 章節撰寫器工作流...")
+        logging.info("➡️ 進入章節撰寫器工作流...")
         
         chapter_writer_template = self.prompts.get('final_chapter_writer')
         if not chapter_writer_template:
-            # 確保你已經創建並更新了 final_chapter_writer.txt
             chapter_writer_template = self.prompts.get('chapter_writer') 
             logging.warning("未找到 'final_chapter_writer.txt'，退回使用 'chapter_writer.txt'。")
 
-        # --- [終極自適應解析邏輯] ---
         chapters_to_write = []
-
-        # 策略 1: 尋找名為 '目錄' 或 'table_of_contents' 的列表，並用它作為地圖
         toc_key = next((key for key in ['目录', 'table_of_contents', 'contents'] if key in blueprint_json and isinstance(blueprint_json[key], list)), None)
         if toc_key:
             logging.info(f"   -> 解析策略 1: 成功匹配 '{toc_key}' 列表結構，將其用作路線圖。")
             for chapter_title in blueprint_json[toc_key]:
-                # 從 JSON 的頂層尋找與目錄標題完全匹配的鍵
                 if chapter_title in blueprint_json and isinstance(blueprint_json[chapter_title], dict):
                     chapters_to_write.append((chapter_title, blueprint_json[chapter_title]))
-        
-        # 策略 2: 如果沒有目錄，尋找名為 'sections' 的列表
         elif 'sections' in blueprint_json and isinstance(blueprint_json['sections'], list):
             logging.info("   -> 解析策略 2: 成功匹配 'sections' 列表結構。")
             for item in blueprint_json['sections']:
                 if isinstance(item, dict) and 'section_title' in item:
                     chapters_to_write.append((item['section_title'], item.get('subsections', {})))
 
-        # 策略 3: 作為最終的降級方案，收集所有值為字典的頂層鍵
         else:
             logging.warning("   -> 未找到明確的目錄或章節列表，啟用降級策略：掃描所有頂層字典。")
             chapters_to_write = [(key, value) for key, value in blueprint_json.items() if isinstance(value, dict)]
@@ -620,10 +621,8 @@ class ConversationalRAG:
                 
                 raw_chapter_content = ""
                 for chunk in self.llm.stream(chapter_prompt):
-                    # 在這裡進行最終的清理，以防萬一
                     cleaned_chunk = re.sub(r"<think>.*?</think>", "", chunk, flags=re.DOTALL).strip(" \n")
                     if cleaned_chunk:
-                        # 確保 chunk 之間有空格，避免單詞粘連
                         raw_chapter_content += cleaned_chunk + "" 
                         yield cleaned_chunk
 
@@ -642,30 +641,25 @@ class ConversationalRAG:
         遞迴地將大綱的 JSON 節點轉換為格式化的 Markdown 字串。
         """
         parts = []
-        indent = "  " * level  # 根據層級縮排
+        indent = "  " * level  # level
 
         if isinstance(node, dict):
             for key, value in node.items():
-                # 將 key 作為一個小標題或重點
                 parts.append(f"{indent}- **{key}:**")
-                # 遞迴處理 value，層級+1
                 parts.append(self._generate_markdown_from_blueprint(value, level + 1))
         elif isinstance(node, list):
             for item in node:
-                # 列表中的每個項目都遞迴處理
                 parts.append(self._generate_markdown_from_blueprint(item, level))
         else:
-            # 如果是字串或數字等基本類型，直接作為列表項
             parts.append(f"{indent}- {str(node)}")
             
         return "\n".join(parts)
 
     def _handle_complex_project(self, question: str, stream: bool = True):
       try:
-          logging.info("🚀 啟動 [V8-最終架構] 專家小組工作流...")
+          logging.info("🚀 啟動 [KAIZEN 最終架構] 專家小組工作流...")
           yield f"data: {json.dumps({'type': 'status', 'message': '步驟 1/3: 正在拆解與研究任務...'})}\n\n"
         
-          # --- 步驟 1 & 2: 任務拆解與研究 (保持不變) ---
           task_decomp_template = self.prompts.get('task_decomposition')
           task_decomp_prompt_string = task_decomp_template.format(question=question)
           sub_tasks_str = self.llm.invoke(task_decomp_prompt_string)
@@ -677,31 +671,60 @@ class ConversationalRAG:
           sub_tasks = validated_tasks
           logging.info(f"✅ 清理與驗證後的子任務 ({len(sub_tasks)} 條): {sub_tasks}")
 
-          research_memos = []
+          executive_summaries = [] 
           all_source_documents = []
           analyst_template = self.prompts.get('research_synthesizer')
-          keyword_gen_chain = self.prompts['web_search_generation'] | self.llm | StrOutputParser()
+          summarizer_template = self.prompts.get('memo_summarizer')
+          search_strategist_template = self.prompts.get('search_strategist')
+          if not all([analyst_template, summarizer_template, search_strategist_template]):
+              raise ValueError("一個或多個關鍵的 Prompt 模板 (research_synthesizer, memo_summarizer, search_strategist) 未找到！")
+          strategist_chain = search_strategist_template | self.llm | StrOutputParser()         
+          memo_summarizer_chain = summarizer_template | self.llm | StrOutputParser()
 
           for i, task in enumerate(sub_tasks):
               yield f"data: {json.dumps({'type': 'status', 'message': f'步驟 1.{i+1}/{len(sub_tasks)}: 正在研究 \"{task[:20]}...\"'})}\n\n"
-              search_keywords = keyword_gen_chain.invoke({"question": question, "task": task}).strip()
-              search_docs = self._agent_based_web_search(search_keywords)
-              if search_docs: all_source_documents.extend(search_docs)
-              context = "\n---\n".join([f"來源：{doc.metadata.get('source', '網路')}\n內容：\n{doc.page_content}" for doc in search_docs]) if search_docs else "注意：未能從網路找到相關資料。"
-              memo = self.llm.invoke(analyst_template.format(context=context, question=task))
-              research_memos.append(f"--- 研究備忘錄 for '{task}' ---\n{memo}\n")
-          final_context = "\n".join(research_memos)
+              search_queries_str = strategist_chain.invoke({"question": question, "task": task})
+              search_queries = [line.strip() for line in re.findall(r"^\s*\d+\.\s*(.*)", search_queries_str, re.MULTILINE) if line.strip()]
+              if not search_queries:
+                  search_queries = [task] 
+                  logging.info(f"   -> 策略師為 '{task}' 生成了 {len(search_queries)} 個搜尋向量: {search_queries}")
 
-          # --- 步驟 3: 生成最終大綱 (保持不變) ---
+              task_specific_docs = []
+              for j, query in enumerate(search_queries):
+                  #yield f"data: {json.dumps({'type': 'status', 'message': f'步驟 1.{i+1}/{len(sub_tasks)}: 正在執行搜尋 {j+1}/{len(search_queries)}: \"{query[:25]}...\"'})}\n\n"
+                  docs_for_query = self._agent_based_web_search(query)
+                  if docs_for_query:
+                      task_specific_docs.extend(docs_for_query)
+          
+              if task_specific_docs:
+                  all_source_documents.extend(task_specific_docs)
+                  unique_contents = set()
+                  unique_docs_for_synthesis = []
+                  for doc in task_specific_docs:
+                      if doc.page_content not in unique_contents:
+                          unique_contents.add(doc.page_content)
+                          unique_docs_for_synthesis.append(doc)
+                  logging.info(f"   -> 為子任務 '{task}' 匯總了 {len(unique_docs_for_synthesis)} 份不重複的文件進行綜合分析。")
+                  context = "\n---\n".join([f"來源：{doc.metadata.get('source', '網路')}\n內容：\n{doc.page_content}" for doc in unique_docs_for_synthesis])
+              else:
+                  logging.warning(f"   -> 未能為子任務 '{task}' 找到任何網路資料。")
+                  context = "注意：未能從網路找到相關資料。"
+              detailed_memo = self.llm.invoke(analyst_template.format(context=context, question=task))
+              yield f"data: {json.dumps({'type': 'status', 'message': f'步驟 2.{i+1}/{len(sub_tasks)}: 正在精煉 \"{task[:20]}...\" 的研究成果...'})}\n\n"
+              summary = memo_summarizer_chain.invoke({"memo": detailed_memo})  
+              executive_summaries.append(f"### 研究主題: {task}\n{summary}")
+              logging.info(f"   -> 已為 '{task}' 生成執行摘要:\n{summary[:100]}...")
+          final_context = "\n\n---\n\n".join(executive_summaries)
+
           yield f"data: {json.dumps({'type': 'status', 'message': '步驟 2/3: 正在生成最終報告大綱...'})}\n\n"
-          format_example_str = "..." # (保持你現有的通用範例字串即可)
           blueprint_gen_template = self.prompts.get('answer_blueprint_generator')
-          base_blueprint_prompt = blueprint_gen_template.format(format_example=format_example_str, context=final_context, question=question)
+          base_blueprint_prompt = blueprint_gen_template.format(context=final_context, question=question)
           blueprint_json = None
-          # ... (保持現有的 JSON 解析與重試邏輯)
+
           for attempt in range(3):
               prompt_to_use = base_blueprint_prompt if attempt == 0 else f"{base_blueprint_prompt}\n\n[修正指令]: 上次解析失敗，請嚴格輸出 JSON。"
               blueprint_str = self.llm.invoke(prompt_to_use)
+              logging.info(f"--- 大綱生成器回應 (嘗試 {attempt + 1}) ---\n{blueprint_str}\n--------------------")
               try:
                   match = re.search(r"```json\s*(\{.*?\})\s*```", blueprint_str, re.DOTALL) or re.search(r"(\{.*\})", blueprint_str, re.DOTALL)
                   if not match: raise json.JSONDecodeError("輸出中找不到 JSON。", blueprint_str, 0)
@@ -712,26 +735,24 @@ class ConversationalRAG:
                   logging.warning(f"❌ 解析 JSON 失敗 (嘗試 {attempt + 1}): {e}")
           if blueprint_json is None: raise ValueError("在 3 次嘗試後仍無法解析 JSON。")
 
-          # --- 步驟 4: [最終架構] - 單一的、權威的總報告生成器 ---
-          yield f"data: {json.dumps({'type': 'status', 'message': '步驟 3/3: 正在撰寫最終報告...'})}\n\n"
+          yield f"data: {json.dumps({'type': 'status', 'message': '步驟 4/4: 正在撰寫最終報告...'})}\n\n"
           
-          final_writer_template = self.prompts.get('final_chapter_writer')
+          final_writer_template = self.prompts.get('final_report_writer')
           final_report_prompt = final_writer_template.format(
+              question=question,
               context=final_context,
               blueprint=json.dumps(blueprint_json, indent=2, ensure_ascii=False) # 將漂亮的 JSON 大綱作為字串傳入
           )
 
           full_answer = ""
-          # 直接串流原始輸出，不做任何中間處理
           for chunk in self.llm.stream(final_report_prompt):
               full_answer += chunk
               yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
-          
+      
           logging.info("報告串流生成完畢！正在進行最終清理與儲存...")
 
-          # 在儲存前，對完整的答案進行一次性的、徹底的清理
           final_cleaned_answer = re.sub(r"<think>.*?</think>", "", full_answer, flags=re.DOTALL).strip()
-          
+      
           if all_source_documents:
               yield f"data: {json.dumps({'type': 'sources', 'data': [{'page_content': doc.page_content, 'metadata': doc.metadata} for doc in all_source_documents]})}\n\n"
 
