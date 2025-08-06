@@ -781,9 +781,12 @@
                     <div id="chat-box">
                         <div class="message bot-message">
                             <div class="message-wrapper">
-                                <div class="content">你好！我是您的 RAG 助理。您可以從右側面板選擇模型、設定功能或上傳文件來開始對話。---AI 可能會出錯請查核重要資訊</div>
+                                <div class="content">你好！我是您的 RAG 助理。您可以從右側面板選擇模型、設定功能或上傳文件來開始對話。 ---AI 可能會出錯請查核重要資訊---</div>
                             </div>
                         </div>
+                    </div>
+					<div id="status-bar" style="padding: 5px 1rem; font-size: 0.9em; color: var(--secondary-text); background-color: rgba(0,0,0,0.1); display: none;">
+                         正在初始化...
                     </div>
                     <div id="chat-form">
                         <textarea id="chat-input" placeholder="在這裡輸入您的問題... (Shift+Enter 換行)" rows="1" onkeydown="handleEnter(event)"></textarea>
@@ -816,16 +819,9 @@
                              <input type="checkbox" id="web-search-toggle" class="toggle-input" checked>
                              <label for="web-search-toggle" class="toggle-label">
                                  <span class="slider"></span>
-                                 <span class="toggle-text">啟用研究</span>
+                                 <span class="toggle-text">啟用網路研究</span>
                              </label>
                         </div>
-                            <div class="toggle-switch-container">
-                                <input type="checkbox" id="scraper-toggle" class="toggle-input" checked>
-                                <label for="scraper-toggle" class="toggle-label">
-                                    <span class="slider"></span>
-                                    <span class="toggle-text">啟用網頁爬蟲</span>
-                                </label>
-                            </div>
                             <div class="toggle-switch-container">
                                 <input type="checkbox" id="wikipedia-toggle" class="toggle-input" checked>
                                 <label for="wikipedia-toggle" class="toggle-label">
@@ -882,7 +878,7 @@
     <script>
         // --- Global Vars ---
         let chatBox, chatInput, submitButton, modelSelector, modelStatus, clearChatBtn;
-		let historyToggle, wikipediaToggle, scraperToggle, webSearchToggle;
+		let historyToggle, wikipediaToggle, webSearchToggle;
         let uploadBtn, fileInput, uploadStatus;
         let allRecords = [];
         let currentPage = 1;
@@ -899,7 +895,6 @@
             clearChatBtn = document.getElementById('clear-chat-btn');
             historyToggle = document.getElementById('history-toggle');
             wikipediaToggle = document.getElementById('wikipedia-toggle');
-            scraperToggle = document.getElementById('scraper-toggle');
 			webSearchToggle = document.getElementById('web-search-toggle');
             uploadBtn = document.getElementById('upload-btn');
             fileInput = document.getElementById('file-upload');
@@ -907,7 +902,6 @@
             webSearchToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_web_search'));
             historyToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_history'));
             wikipediaToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_wikipedia'));
-            scraperToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_scraper'));
             modelSelector.addEventListener('change', handleModelChange);
             clearChatBtn.addEventListener('click', handleClearChat);
             uploadBtn.addEventListener('click', handleFileUpload);
@@ -968,7 +962,6 @@
 				webSearchToggle.checked = data.web_search_enabled;
                 historyToggle.checked = data.history_enabled;
                 wikipediaToggle.checked = data.wikipedia_enabled;
-                scraperToggle.checked = data.scraper_enabled;
                 syncUIToggles();
             } catch (error) {
                 console.error('載入設定失敗:', error);
@@ -994,26 +987,20 @@
         }
 
         function syncUIToggles(changedElement) {
-            // 獲取所有開關的當前狀態
             const isWebSearchOn = webSearchToggle.checked;
             
-            if (changedElement) { // 如果是由用戶點擊觸發
+            if (changedElement) { 
                 if (changedElement.id === 'web-search-toggle' && isWebSearchOn) {
-                    // 當「啟用研究」被打開時，關閉並禁用其他三個
                     historyToggle.checked = false;
                     wikipediaToggle.checked = false;
-                    scraperToggle.checked = false;
                 } else if (['history-toggle', 'wikipedia-toggle', 'scraper-toggle'].includes(changedElement.id) && changedElement.checked) {
-                    // 當其他三個中任意一個被打開時，關閉「啟用研究」
                     webSearchToggle.checked = false;
                 }
             }
             
-            // 根據「啟用研究」的最終狀態，決定其他開關是否可交互
             const shouldDisableOthers = webSearchToggle.checked;
             historyToggle.disabled = shouldDisableOthers;
             wikipediaToggle.disabled = shouldDisableOthers;
-            scraperToggle.disabled = shouldDisableOthers;
         }
 
 
@@ -1222,6 +1209,9 @@
             botMessageWrapper.insertBefore(thinkBlock, botContentDiv);
             const thinkContentDiv = thinkBlock.querySelector('.thinking-content');
 
+            const statusBar = document.getElementById('status-bar');
+            statusBar.textContent = '正在連接伺服器...';
+            statusBar.style.display = 'block';
             fullMarkdownResponse = '';
             let animationFrameId = null;
 
@@ -1261,48 +1251,46 @@
 
             try {
                 const eventSource = new EventSource(`/ask?question=${encodeURIComponent(question)}`);
-
                 eventSource.onmessage = function(event) {
                     if (event.data === '[DONE]') {
-                        eventSource.close();
-                        submitButton.disabled = false;
-
-                        //const finalText = botContentDiv.textContent;
-                        //if (finalText) {
-                        //    botContentDiv.innerHTML = marked.parse(finalText);
-                        //}
-
-                        if (animationFrameId) {
-                            cancelAnimationFrame(animationFrameId);
-                            render();
-                        }
+					    eventSource.close();
+						submitButton.disabled = false;
+                        statusBar.style.display = 'none';
+						if (animationFrameId) {
+						    cancelAnimationFrame(animationFrameId);
+							render();
+						}	
                         return;
                     }
 
                     const data = JSON.parse(event.data);
 
-                    if (data.type === 'sources') {
+                    if (data.type === 'status') {
+                        statusBar.textContent = data.message;
+                    } else if (data.type === 'sources') {
                         appendSources(botMessageWrapper, data.data, question);
-                    } else if (data.type === 'content' && data.content) {
-                        fullMarkdownResponse += data.content;
+						} else if (data.type === 'content' && data.content) {
+						     fullMarkdownResponse += data.content;
                         if (!animationFrameId) {
                             animationFrameId = requestAnimationFrame(render);
                         }
                     } else if (data.type === 'error' || data.error) {
                         appendError(data.error);
                         eventSource.close();
+						statusBar.style.display = 'none'
                     }
                 };
 
                 eventSource.onerror = function(err) {
-                    console.error("EventSource failed:", err);
+				    console.error("EventSource failed:", err);
                     appendError("無法連接到伺服器。");
                     eventSource.close();
-                    submitButton.disabled = false;
                 };
             } catch (error) {
                 console.error('Error:', error);
                 appendError("發生未知的前端錯誤，請查看主控台。");
+				submitButton.disabled = false;
+				statusBar.style.display = 'none';
             }
         }
 
