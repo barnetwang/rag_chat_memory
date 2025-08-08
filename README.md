@@ -86,8 +86,6 @@ Designed for privacy, cost-effectiveness, and professional-grade output, this to
 ---
 
 ## 📂 Project Structure
-
-```
 /
 ├── app/
 │ ├── init.py # Initialize Flask app & core services
@@ -101,8 +99,8 @@ Designed for privacy, cost-effectiveness, and professional-grade output, this to
 ├── run.py # Entry point to launch the app
 ├── requirements.txt # Python dependencies
 └── README.md # You're here!
-```
-
+code
+Code
 ---
 
 ## 🤝 Contributing
@@ -123,6 +121,8 @@ Follow these steps:
 This project is open-source and uses various third-party libraries.
 
 Please review their licenses carefully before using this code for commercial purposes.
+
+Special thanks to my dear friend Kaizen.
 
 ---
 
@@ -189,58 +189,42 @@ Please review their licenses carefully before using this code for commercial pur
    git clone https://github.com/barnetwang/rag-chatbot.git
    cd rag-chatbot
    ```
-
-2. **安裝依賴套件**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **下載所需模型**
-
-   修改 `config.py` 中的預設模型設定後進行下載：
-   ```bash
-   ollama pull gemma:2b          # 默認 LLM 模型
-   oollama pull nomic-embed-text  # 默認嵌入模型（如需使用）
-   ```
-
-4. **啟動應用程序**
-   ```bash
-   python run.py
-   ```
-
-5. **開啟介面**
-   瀏覽器中輸入：
-   ```
-   http://127.0.0.1:5000
-   ```
-
----
-
-## 🔧 配置檔案說明
-
-修改 `config.py` 中的參數進行自訂：
-
-### 核心設定
-
-| 參數名稱              | 說明 |
-|-----------------------|------|
-| `DEFAULT_MODEL`       | 啟動時預設使用的 LLM 模型 |
-| `EMBEDDING_MODEL_NAME`| HuggingFace 中的嵌入式模型名稱 |
-| `PERSIST_DIRECTORY`   | ChromaDB 向量儲存路徑 |
-
-### 搜尋調整參數
-
-| 參數名稱              | 說明 |
-|-----------------------|------|
-| `VECTOR_SEARCH_K`     | 向量搜尋返回結果數目 |
-| `BM25_SEARCH_K`       | BM25 搜尋返回結果數目 |
-| `ENSEMBLE_WEIGHTS`    | 向量與關鍵字搜索結果合成時的權重分配比例 |
-
----
-
-## 📂 專案架構
-
+安裝依賴套件
+```Bash
+pip install -r requirements.txt
 ```
+下載所需模型
+修改 config.py 中的預設模型設定後進行下載：
+
+```Bash
+ollama pull qwen2:7b-instruct     # 主要的 LLM 生成模型
+ollama pull nomic-embed-text      # 嵌入模型
+```
+啟動應用程序
+```Bash
+python run.py
+```
+開啟介面
+瀏覽器中輸入：
+```Bash
+http://127.0.0.1:5000
+```
+🔧 配置檔案說明
+修改 config.py 中的參數進行自訂：
+核心設定
+參數名稱	說明
+DEFAULT_MODEL	啟動時預設使用的 LLM 模型
+EMBEDDING_MODEL_NAME	HuggingFace 中的嵌入式模型名稱
+PERSIST_DIRECTORY	ChromaDB 向量儲存路徑
+搜尋調整參數
+參數名稱	說明
+VECTOR_SEARCH_K	向量搜尋返回結果數目
+BM25_SEARCH_K	BM25 搜尋返回結果數目
+ENSEMBLE_WEIGHTS	向量與關鍵字搜索結果合成時的權重分配比例
+
+📂 專案架構
+code
+```Bash
 /
 ├── app/
 │ ├── init.py      # Flask 初始化
@@ -256,24 +240,16 @@ Please review their licenses carefully before using this code for commercial pur
 └── README.md            # 說明文件（就是這個！）
 ```
 
----
-
-## 🤝 貢獻指南
-
+🤝 貢獻指南
 歡迎各位參與開發！
-
 操作流程如下：
+Fork 此倉儲
+建立新分支：git checkout -b feature/your-feature
+提交變更：git commit -am 'Add some feature'
+推送到分支：git push origin feature/your-feature
+開啟 Pull Request
 
-1. Fork 此倉儲
-2. 建立新分支：`git checkout -b feature/your-feature`
-3. 提交變更：`git commit -am 'Add some feature'`
-4. 推送到分支：`git push origin feature/your-feature`
-5. 開啟 Pull Request
-
----
-
-## ⚖️ 授權與感謝
-
+⚖️ 授權與感謝
 此專案為開源項目，使用了多個第三方函式庫。
-
 請仔細閱讀其授權條款，在商業用途前務必審視清楚。
+最後特別感謝好朋友Kaizen
