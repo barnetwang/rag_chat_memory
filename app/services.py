@@ -1,35 +1,28 @@
-﻿import os
+import os
 import json
 import re
 import requests
-import wikipedia
 from datetime import datetime
 from bs4 import BeautifulSoup
 import logging
 import urllib3
 import time
-from typing import Any
+from typing import Any, Generator
 
 # LangChain Imports
 from ddgs import DDGS
 from langchain_ollama.llms import OllamaLLM
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain.prompts import PromptTemplate
-from langchain_unstructured.document_loaders import UnstructuredLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.retrievers import BM25Retriever
-from langchain.retrievers import EnsembleRetriever
 from langchain_core.output_parsers import StrOutputParser
-from langchain_community.vectorstores.utils import filter_complex_metadata
 
 try:
-    from playwright.sync_api import sync_playwright, Playwright, Browser
+    from playwright.sync_api import sync_playwright, Browser
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
-    logging.warning("Playwright 未安裝。爬蟲功能將僅使用 requests。建議執行 'pip install playwright && playwright install' 來增強爬蟲能力。")
+    logging.warning(
+        "Playwright 未安裝。爬蟲功能將僅使用 requests。建議執行 'pip install playwright && playwright install' 來增強爬蟲能力。")
 
 try:
     import fitz
@@ -38,8 +31,10 @@ except ImportError:
     PYMUPDF_AVAILABLE = False
     logging.warning("PyMuPDF 未安裝。PDF 處理功能將不可用。建議執行 'pip install PyMuPDF'。")
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s - %(levelname)s - %(message)s")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 def get_ollama_models(ollama_base_url="http://localhost:11434"):
     try:
@@ -50,58 +45,27 @@ def get_ollama_models(ollama_base_url="http://localhost:11434"):
         logging.error(f"存取 Ollama 模型時發生錯誤: {e}")
         return []
 
+
 class ConversationalRAG:
     def __init__(self, config: dict):
         self.playwright = None
         self.browser = None
         self.config = config
-        self.persist_directory = self.config["PERSIST_DIRECTORY"]
         self.use_web_search = True
-        self.use_wikipedia = False
-        self.use_history = False
         self.ollama_base_url = self.config["OLLAMA_BASE_URL"]
         self.prompts = {}
-        self.all_docs_for_bm25 = []
-        self.bm25_retriever = None
-
-        logging.info("正在初始化 Embedding 模型...")
-        try:
-            self.embeddings = HuggingFaceEmbeddings(
-                model_name=self.config["EMBEDDING_MODEL_NAME"],
-                model_kwargs={"device": self.config["EMBEDDING_DEVICE"], "trust_remote_code": True},
-            )
-        except Exception as e:
-            logging.error(f"初始化 Embedding 模型失敗: {e}")
-            raise
-
-        logging.info("正在初始化/載入向量數據化...")
-        try:
-            self.vector_db = Chroma(
-                persist_directory=self.persist_directory, embedding_function=self.embeddings
-            )
-        except Exception as e:
-            logging.error(f"初始化向量數據庫失敗: {e}")
-            raise
+        self.active_tasks = {}
 
         logging.info("正在設置 LLM...")
         try:
-            self.llm = OllamaLLM(model=self.config["llm_model"], base_url=self.ollama_base_url)
+            self.llm = OllamaLLM(
+                model=self.config["llm_model"], base_url=self.ollama_base_url)
             self.current_llm_model = self.config["llm_model"]
         except Exception as e:
             logging.error(f"設置 LLM 失敗: {e}")
             raise
-            
+
         self._init_prompts()
-
-        logging.info("正在初始化混合檢索器...")
-        try:
-            self.vector_retriever = self.vector_db.as_retriever(search_kwargs={"k": self.config["VECTOR_SEARCH_K"]})
-            self.ensemble_retriever = self.vector_retriever
-            self.update_ensemble_retriever(full_rebuild=True)
-        except Exception as e:
-            logging.error(f"初始化混合檢索器失敗: {e}")
-            raise
-
         logging.info("✅ 系統已就緒 (使用 DDGS 作為搜尋引擎)。")
 
     def _init_playwright(self):
@@ -128,48 +92,19 @@ class ConversationalRAG:
                 filepath = os.path.join(prompts_dir, filename)
                 with open(filepath, 'r', encoding='utf-8') as f:
                     prompt_name = os.path.splitext(filename)[0]
-                    prompts[prompt_name] = PromptTemplate.from_template(f.read(), template_format="f-string")
+                    prompts[prompt_name] = PromptTemplate.from_template(
+                        f.read(), template_format="f-string")
                     logging.info(f"   -> 已加載: {prompt_name}")
         return prompts
 
     def _init_prompts(self):
         self.prompts = self._load_all_prompts("prompts")
-        aux_prompts = {
-            "query_expansion": "你是一個查詢優化助理。請根據使用者提供的原始查詢，生成一個更具體、更可能在技術檔中找到相關內容的擴展查詢。請只返回擴展後的查詢，不要添加任何解釋。\n\n[原始查詢]: {original_query}\n\n[擴展查詢]:",
-            "web_search_generation": """你是一位精通網路搜尋的助理。你的任務是將使用者提出的「研究子任務」，結合「核心主題」，轉換成一組簡潔、高效的搜尋引擎關鍵字。
-
-規則：
-- 只返回關鍵字，不要包含任何解釋或多餘的文字。
-- 始終包含核心主題，以確保搜尋結果的相關性。
-- 使用繁體中文。
-
-範例：
-[核心主題]: 電動車市場分析
-[研究子任務]: 分析電池技術的發展瓶頸
-[關鍵字]: 電動車 電池技術瓶頸 固態電池 成本
-
-[核心主題]: {question}  <-- 我們可以將原始問題作為核心主題
-[研究子任務]: {task}
-[關鍵字]:"""
-        }
-        for name, template_str in aux_prompts.items():
-            if name not in self.prompts:
-                self.prompts[name] = PromptTemplate.from_template(
-                    template_str, template_format="f-string"
-                )
-                logging.info(f"   -> 已動態加載輔助模板: {name}")
-
-        if 'router' not in self.prompts:
-            logging.error("關鍵的 'router.txt' 模板未找到！請在 prompts 目錄中創建它。")
-            fallback_router_template = '使用者問題: {question}\n\n[JSON]: {{"path": "rag_query", "persona": "default_rag"}}'
-            self.prompts['router'] = PromptTemplate.from_template(
-                fallback_router_template, template_format="f-string"
-            )
 
     def set_llm_model(self, model_name: str):
         logging.info(f"\n🔄 正在切換 LLM 模型至: {model_name}")
         try:
-            self.llm = OllamaLLM(model=model_name, base_url=self.ollama_base_url)
+            self.llm = OllamaLLM(
+                model=model_name, base_url=self.ollama_base_url)
             self.llm.invoke("Hi", stop=["Hi"])
             self.current_llm_model = model_name
             logging.info(f"✅ LLM 模型成功切換為: {self.current_llm_model}")
@@ -181,151 +116,7 @@ class ConversationalRAG:
     def set_web_search(self, enabled: bool):
         logging.info(f"🔄 將網路搜尋設置為: {'啟用' if enabled else '停用'}")
         self.use_web_search = enabled
-        if enabled:
-            self.use_history = False
-            self.use_wikipedia = False
-            logging.info("   -> (自動) 已停用歷史記錄、維基百科和URL爬蟲，進入純網路搜尋模式。")
         return True
-
-    def set_history_retrieval(self, enabled: bool):
-        logging.info(f"🔄 將歷史對話檢索設置為: {'啟用' if enabled else '停用'}")
-        self.use_history = enabled
-        if enabled:
-            self.use_web_search = False
-            logging.info("   -> (自動) 已停用網路搜尋。")
-        return True
-
-    def set_wikipedia_search(self, enabled: bool):
-        logging.info(f"🔄 將維基搜索設置為: {'啟用' if enabled else '停用'}")
-        self.use_wikipedia = enabled
-        if enabled:
-            self.use_web_search = False
-            logging.info("   -> (自動) 已停用網路搜尋。")
-        return True
-
-    def search_records(self, query: str = "", page: int = 1, per_page: int = 50):
-        logging.info(f"🔍 正在資料庫中搜索 '{query}'，第 {page} 頁...")
-        offset = (page - 1) * per_page
-        where_document_filter = {"$contains": query} if query and query.strip() else None
-        try:
-            all_matching_ids = self.vector_db._collection.get(
-                where_document=where_document_filter, include=[]
-            )["ids"]
-            total_records = len(all_matching_ids)
-            results = self.vector_db.get(
-                limit=per_page,
-                offset=offset,
-                where_document=where_document_filter,
-                include=["metadatas", "documents"],
-            )
-            records = [
-                {
-                    "id": results["ids"][i],
-                    "content": results["documents"][i],
-                    "metadata": results["metadatas"][i],
-                }
-                for i in range(len(results["ids"]))
-            ]
-            return {
-                "records": sorted(records, key=lambda x: x["id"], reverse=True),
-                "total_records": total_records,
-                "current_page": page,
-                "total_pages": (total_records + per_page - 1) // per_page,
-            }
-        except Exception as e:
-            logging.error(f"在資料庫搜索時發生錯誤: {e}")
-            return {
-                "records": [],
-                "total_records": 0,
-                "current_page": 1,
-                "total_pages": 0,
-            }
-
-    def update_ensemble_retriever(
-        self, new_docs: list = None, full_rebuild: bool = False
-    ):
-        logging.info("🔄 正在更新 Ensemble Retriever...")
-        if full_rebuild:
-            logging.info("   -> 執行完整重建...")
-            try:
-                all_data = self.vector_db.get(include=["documents", "metadatas"])
-                documents_content = all_data["documents"]
-                metadatas = all_data["metadatas"]
-                self.all_docs_for_bm25 = [
-                    Document(page_content=documents_content[i], metadata=metadatas[i])
-                    for i in range(len(documents_content))
-                    if documents_content[i] != "start"
-                ]
-                logging.info(
-                    f"   -> 從資料庫載入 {len(self.all_docs_for_bm25)} 份檔進行索引。"
-                )
-            except Exception as e:
-                logging.error(f"從資料庫獲取文檔失敗: {e}")
-                self.all_docs_for_bm25 = []
-        if new_docs:
-            logging.info(f"   -> 執行增量更新，新增 {len(new_docs)} 份文件...")
-            self.all_docs_for_bm25.extend(new_docs)
-        if not self.all_docs_for_bm25:
-            logging.info("   -> 資料庫文檔不足，僅使用向量檢索器。")
-            self.ensemble_retriever = self.vector_retriever
-            self.bm25_retriever = None
-            return
-        try:
-            logging.info(
-                f"   -> 正在基於 {len(self.all_docs_for_bm25)} 份檔重建 BM25 索引..."
-            )
-            self.bm25_retriever = BM25Retriever.from_documents(
-                self.all_docs_for_bm25, k=self.config["BM25_SEARCH_K"]
-            )
-            self.ensemble_retriever = EnsembleRetriever(
-                retrievers=[self.bm25_retriever, self.vector_retriever],
-                weights=self.config["ENSEMBLE_WEIGHTS"],
-            )
-            logging.info("✅ 混合檢索器已成功更新。")
-        except Exception as e:
-            logging.error(f"更新混合檢索器失敗: {e}。將退回至僅使用向量檢索器。")
-            self.ensemble_retriever = self.vector_retriever
-
-    def add_document(self, file_path: str):
-        logging.info(f"📄 正在處理新文件: {file_path}")
-        try:
-            loader = UnstructuredLoader(file_path, mode="elements", strategy="fast")
-            docs = loader.load()
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=self.config.get("CHUNK_SIZE", 1000),
-                chunk_overlap=self.config.get("CHUNK_OVERLAP", 200),
-            )
-            splits = text_splitter.split_documents(docs)
-            logging.info(f"   -> 文件被切割成 {len(splits)} 個片段。")
-            file_name = os.path.basename(file_path)
-            for split in splits:
-                split.metadata["source"] = file_name
-            final_splits = filter_complex_metadata(splits)
-            logging.info(f"   -> 已清理 {len(final_splits)} 個片段的元數據。")
-            if not final_splits:
-                logging.warning("   -> 文件處理後沒有生成任何可用的文字片段，處理中止。")
-                return
-            batch_size = 32
-            total_splits = len(final_splits)
-            logging.info(f"   -> 將以每批 {batch_size} 個片段的大小，分批次存入資料庫...")
-            for i in range(0, total_splits, batch_size):
-                batch = final_splits[i : i + batch_size]
-                self.vector_db.add_documents(batch)
-                logging.info(
-                    f"      -> 已存入 {min(i + batch_size, total_splits)} / {total_splits} 個片段..."
-                )
-            logging.info(f"✅ 檔 '{file_name}' 已成功存入向量資料庫。")
-            self.update_ensemble_retriever(new_docs=final_splits)
-        except Exception as e:
-            logging.error(f"文件處理時發生嚴重錯誤: {e}", exc_info=True)
-            raise
-        finally:
-            logging.info(f"🧹 正在清理暫存檔: {file_path}")
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except OSError as e:
-                    logging.error(f"清理暫存檔 {file_path} 失敗: {e}")
 
     def _agent_based_web_search(self, question: str):
         logging.info(f"🤖 (Agent模式) 啟動 DDGS 通用網路搜尋: '{question}'")
@@ -333,7 +124,6 @@ class ConversationalRAG:
         if not PLAYWRIGHT_AVAILABLE:
             logging.warning("Playwright 未安裝，搜尋功能受限。")
             return []
-
         # --- 網站黑名單 ---
         DOMAIN_BLACKLIST = [
             "zhihu.com",      # 很難爬取，經常需要登入
@@ -343,452 +133,292 @@ class ConversationalRAG:
             "medium.com",     # 經常有付費牆或登入提示
         ]
         # ------------------------------------
-
         with sync_playwright() as playwright:
             browser: Browser = None
             try:
                 browser = playwright.chromium.launch(headless=True)
                 with DDGS() as ddgs:
-                    search_results = ddgs.text(question, max_results=20, region="tw-zh")
-                if not search_results: return []
+                    search_results = ddgs.text(
+                        question, max_results=20, region="tw-zh")
+                if not search_results:
+                    return []
                 urls_to_browse = [
-                    res["href"] for res in search_results 
+                    res["href"] for res in search_results
                     if "href" in res and not any(blacklisted in res["href"] for blacklisted in DOMAIN_BLACKLIST)
                 ][:10]
-                # ------------------------------------------
-
                 logging.info(f"   -> 已過濾掉黑名單網站，準備瀏覽以下 {len(urls_to_browse)} 個網頁...")
                 if not urls_to_browse:
                     logging.warning("   -> 過濾後沒有可瀏覽的網頁。")
                     return []
 
                 for url in urls_to_browse:
-                    if not url: continue
+                    if not url:
+                        continue
                     content = self._scrape_webpage_text(url, browser)
-                    if "無法爬取" not in content and len(content) > 100: # 新增長度判斷，過濾掉無用內容
-                        all_source_docs.append(Document(page_content=content, metadata={"source": f"網頁瀏覽: {url}"}))
-                
+                    if "無法爬取" not in content and len(content) > 100:
+                        all_source_docs.append(
+                            Document(page_content=content, metadata={"source": f"網頁瀏覽: {url}"}))
+                logging.info(f"   -> Agent 搜尋 '{question}' 完成，共找到 {len(all_source_docs)} 份有效文件。")
                 return all_source_docs
             except Exception as e:
                 logging.error(f"❌ 在 Agent 搜尋過程中發生錯誤: {e}", exc_info=True)
                 return []
             finally:
-                if browser: browser.close()
-                logging.info("Agent 搜尋任務完成，Playwright 資源已釋放。")
+                if browser:
+                    browser.close()
 
     def _scrape_webpage_text(self, url: str, browser: Browser = None):
         if url.lower().endswith('.pdf'):
-            if not PYMUPDF_AVAILABLE:
-                return "無法處理 PDF 文件，因為 PyMuPDF 未安裝。"
+            if not PYMUPDF_AVAILABLE: return "無法處理 PDF 文件，因為 PyMuPDF 未安裝。"
             try:
                 logging.info(f"📄 (PyMuPDF模式) 正在處理 PDF 網址: {url}")
                 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'}
                 response = requests.get(url, headers=headers, timeout=30, verify=False)
                 response.raise_for_status()
-                
-                pdf_document = fitz.open(stream=response.content, filetype="pdf")
-                text = "".join(page.get_text() for page in pdf_document)
-                pdf_document.close()
+                with fitz.open(stream=response.content, filetype="pdf") as pdf_document:
+                    text = "".join(page.get_text() for page in pdf_document)
                 logging.info(f"✅ (PyMuPDF) 成功提取 PDF 文字，長度: {len(text)} 字元。")
                 return text
             except Exception as e:
                 logging.error(f"❌ (PyMuPDF) 處理 PDF 時失敗: {e}")
                 return f"無法爬取 PDF，錯誤: {e}"
-
         if browser:
             logging.info(f"🕸️ (Playwright模式) 正在嘗試爬取網址: {url}")
             page = None
             try:
-                if any(url.lower().endswith(ext) for ext in ['.doc', '.docx', '.zip', '.rar', '.xls', '.xlsx']):
-                     return "無法爬取網站，錯誤: 不支持的文件類型"
-                     #raise Exception(f"文件類型 ({url})，跳過 Playwright。")
+                if any(url.lower().endswith(ext) for ext in ['.doc', '.docx', '.zip', '.rar', '.xls', '.xlsx']): return "無法爬取網站，錯誤: 不支持的文件類型"
                 page = browser.new_page()
                 page.goto(url, timeout=30000, wait_until='domcontentloaded')
-
                 try:
-                    page.wait_for_selector(
-                        "main, article, #content, #main-content, .post-content, .article-body", 
-                        timeout=10000
-                    )
+                    page.wait_for_selector("main, article, #content, #main-content, .post-content, .article-body", timeout=10000)
                     logging.info("   -> ✅ 成功等到關鍵內容區塊。")
                 except Exception as wait_e:
                     logging.warning(f"   -> ⚠️ 未能等到特定內容區塊，將直接抓取現有內容。錯誤: {wait_e}")
                 html_content = page.content()
                 soup = BeautifulSoup(html_content, "html.parser")
-                for element in soup(["script", "style", "nav", "footer", "aside", "header", "iframe", "form"]):
-                    element.decompose()
+                for element in soup(["script", "style", "nav", "footer", "aside", "header", "iframe", "form"]): element.decompose()
                 text = "\n".join(line.strip() for line in soup.get_text().splitlines() if line.strip())
-                if len(text) < 300:
-                    logging.warning(f"⚠️ (Playwright) 从 {url} 提取的有效文字过少 ({len(text)} 字元)，可能不是主要内容。")
+                if len(text) < 300: logging.warning(f"⚠️ (Playwright) 从 {url} 提取的有效文字过少 ({len(text)} 字元)，可能不是主要内容。")
                 logging.info(f"✅ (Playwright) 成功獲取網頁文字，長度: {len(text)} 字元。")
                 return text
             except Exception as e:
                 logging.warning(f"❌ (Playwright) 失敗: {e}。將回退至 Requests 模式。")
-                return "無法爬取網站，錯誤: 無法連接到伺服器"
+                return "無法爬取網站，錯誤: Playwright 連接失敗"
             finally:
-                if page and not page.is_closed():
-                    page.close()
-        
+                if page and not page.is_closed(): page.close()
         logging.info(f"🕸️ (Requests模式) 正在嘗試爬取網址: {url}")
         try:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'}
             response = requests.get(url, headers=headers, timeout=30, verify=False)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
-            for element in soup(["script", "style", "nav", "footer", "aside", "header", "iframe", "form"]):
-                element.decompose()
+            for element in soup(["script", "style", "nav", "footer", "aside", "header", "iframe", "form"]): element.decompose()
             text = "\n".join(line.strip() for line in soup.get_text().splitlines() if line.strip())
             if not text or len(text) < 300:
                 logging.warning(f"⚠️ (Requests) 未能從 {url} 提取到任何有效文字。")
                 return "無法爬取網站，錯誤: 網頁內容過少或無效"
-            else:
-                logging.info(f"✅ (Requests) 成功獲取網頁文字，長度: {len(text)} 字元。")
+            logging.info(f"✅ (Requests) 成功獲取網頁文字，長度: {len(text)} 字元。")
             return text
         except Exception as e:
             logging.error(f"❌ (Requests) 失敗: {e}")
             return f"無法爬取網址，錯誤: {e}"
 
-    def _search_wikipedia(self, query: str):
-        logging.info(f"🔍 (維琪百科) 正在搜索: '{query[:50].strip()}...'")
-        try:
-            wikipedia.set_lang("zh-tw")
-            summary = wikipedia.summary(query, sentences=5, auto_suggest=False)
-            return summary
-        except Exception:
-            return "無相關資料"
+    def _perform_final_cleanup(self, task_id: str):
+        if task_id:
+            logging.info(f"🧹 任務 {task_id} 正在最終註銷。")
+            if task_id in self.active_tasks:
+                del self.active_tasks[task_id]
 
-    def _get_rag_context(self, question: str, retrieval_query: str):
-        all_source_docs, context_parts = [], []
-        if self.use_wikipedia:
-            wiki_content = self._search_wikipedia(question)
-            if "無相關資料" not in wiki_content:
-                doc = Document(page_content=wiki_content, metadata={"source": "維琪百科"})
-                all_source_docs.append(doc)
-                context_parts.append(f"來源：{doc.metadata['source']}\n內容：\n{doc.page_content}")
-        if self.use_history:
-            db_docs = self.ensemble_retriever.get_relevant_documents(retrieval_query)
-            db_docs = [doc for doc in db_docs if doc.page_content != "start"]
-            if db_docs:
-                all_source_docs.extend(db_docs)
-                context_parts.append("[相關資料庫內容]:\n" + "\n---\n".join([f"來源：{doc.metadata.get('source', '未知')}\n內容：\n{doc.page_content}" for doc in db_docs]))
-        return "\n\n".join(context_parts) if context_parts else "沒有可用的上下文資料。", all_source_docs
+    def _send_done_signal(self) -> Generator[str, None, None]:
+        yield f"data: {json.dumps({'type': 'done', 'content': '[DONE]'})}\n\n"
+        logging.info("✅ 資料流已正常關閉。")
 
-    def _stream_direct_message(self, message: str):
-        """一個可靠的、用於向前端發送單條消息的生成器。"""
-        try:
-            yield f"data: {json.dumps({'type': 'content', 'content': message})}\n\n"
-        except Exception as e:
-            logging.error(f"❌ 在串流直接訊息時發生錯誤: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-        finally:
-            yield f"data: [DONE]\n\n"
+    def _handle_clarification(self, question: str, task_id: str) -> Generator[str, None, None]:
+        logging.info(f"💬 KAIZEN 路由：問題過於寬泛，啟動問題澄清流程。")
+        clarifier_template = self.prompts.get("query_clarifier")
+        if not clarifier_template: raise ValueError("query_clarifier.txt 模板未找到！")
+        clarifier_chain = clarifier_template | self.llm | StrOutputParser()
+        clarification_str = clarifier_chain.invoke({"question": question})
+        match = re.search(r"\{.*\}", clarification_str, re.DOTALL)
+        if not match: raise ValueError(f"問題澄清師的回應中不包含有效的 JSON 結構: {clarification_str}")
+        clarification_json = json.loads(match.group(0))
+        yield f"data: {json.dumps({'type': 'clarification', 'data': clarification_json})}\n\n"
 
-    def stream_and_save(self, question: str, prompt: str, source_documents: list):
-        """
-        一個可重用的、用於串流生成答案並在結束後儲存QA對的核心輔助函式。
-        """
-        full_answer = ""
-        try:
-            if source_documents:
-                yield f"data: {json.dumps({'type': 'sources', 'data': [{'page_content': doc.page_content, 'metadata': doc.metadata} for doc in source_documents]})}\n\n"
-            
-            for chunk in self.llm.stream(prompt):
-                full_answer += chunk
-                yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
-            
-            if full_answer.strip():
-                self.save_qa(question, full_answer)
-                
-        except Exception as e:
-            logging.error(f"❌ 在 stream_and_save 過程中發生錯誤: {e}", exc_info=True)
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-        finally:
-            yield f"data: [DONE]\n\n"
-
-    def ask(self, question: str, stream: bool = True):
-        logging.info(f"\n🤔 收到請求，問題: '{question}'")
-        url_match = re.search(r"https?://[\S]+", question)
-        if url_match:
-            url = url_match.group(0)
-            logging.info(f"🔗 KAIZEN 路由：檢測到 URL，自動升格為複雜研究任務。")
-            rewritten_question = f"請為我撰寫一份關於以下網址內容的深度總結報告：{url}。報告需要提煉出其核心觀點、關鍵信息和主要論據。"
-            return self._handle_complex_project(rewritten_question, stream)
-            
-        logging.info("🧠 未檢測到 URL，轉交 LLM 路由器進行決策...")
-        router_template = self.prompts.get('router')
-        router_prompt_string = router_template.format(question=question)
-        path, persona = "rag_query", "default_rag" 
-        try:
-            raw_route_output = self.llm.invoke(router_prompt_string)
-            logging.info(f"🚦 路由器原始決策: {raw_route_output}")
-            match = re.search(r'{\s*"path"\s*:\s*".*?",\s*"persona"\s*:\s*".*?"\s*}', raw_route_output, re.DOTALL)
-            if match:
-                decision = json.loads(match.group(0))
-                path, persona = decision.get("path", path), decision.get("persona", persona)
+    def _handle_complex_project(self, question: str, stream: bool, task_id: str) -> Generator[str, None, None]:
+        if not self.use_web_search:
+            logging.info("🌐 網路研究功能已停用。轉向直接問答模式 (Invoke)。")
+            direct_answer_template = self.prompts.get("direct_answer")
+            direct_answer_prompt = direct_answer_template.format(question=question) if direct_answer_template else f"問題：{question}\n\n回答："
+            logging.info("正在呼叫 LLM (invoke)...")
+            full_response = self.llm.invoke(direct_answer_prompt)
+            logging.info(f"LLM (invoke) 已回覆，內容長度: {len(str(full_response))}")
+            response_content = full_response.content if hasattr(full_response, 'content') else str(full_response)
+            if response_content and response_content.strip():
+                yield f"data: {json.dumps({'type': 'content', 'content': response_content})}\n\n"
             else:
-                logging.warning("無法從路由器輸出解析 JSON，退回預設路徑。")
-            logging.info(f"🚦 路由器清理後決策 -> 路徑: '{path}', 角色: '{persona}'")
-        except Exception as e:
-            logging.error(f"🚦 路由器決策失敗: {e}, 將走預設 RAG 路徑。")
-
-        main_prompt_template = self.prompts.get(persona) or self.prompts.get('default_rag')
-        if not main_prompt_template:
-            return self._stream_direct_message("系統錯誤：找不到對應的角色模板。")
-
-        if path == "complex_project_query":
-            return self._handle_complex_project(question, stream)
-
-        elif path == "web_search_query":
-            logging.info(f"🌐 走通用網路搜索 RAG 路徑 (使用角色: {persona})...")
-            if not self.use_web_search:
-                 return self._stream_direct_message("網路搜尋功能目前已停用。")
-            keyword_chain = self.prompts['web_search_generation'] | self.llm | StrOutputParser()
-            search_keywords = keyword_chain.invoke({"question": question, "task": question}).strip()
-            search_docs = self._agent_based_web_search(search_keywords)
-            if not search_docs:
-                return self._stream_direct_message("抱歉，我嘗試透過網路搜尋，但未能獲取到相關資訊。")
-            context = "[網路搜索結果]:\n" + "\n---\n".join([f"來源：{doc.metadata.get('source', '網路')}\n內容：\n{doc.page_content}" for doc in search_docs])
-            prompt = main_prompt_template.format(context=context, question=question)
-            return self.stream_and_save(question, prompt, search_docs)
-
-        elif path == "rag_query":
-            logging.info(f"📚 走本地 RAG 路徑 (使用角色: {persona})...")
-            query_chain = self.prompts['query_expansion'] | self.llm | StrOutputParser()
-            expanded_query = query_chain.invoke({"original_query": question}).strip()
-            retrieval_query = f"{question}\n{expanded_query}"
-            context, source_docs = self._get_rag_context(question, retrieval_query)
-            prompt = main_prompt_template.format(context=context, question=question)
-            return self.stream_and_save(question, prompt, source_docs)
-
-        else: 
-            logging.info(f"💬 走直接/通用對話路徑 (使用角色: {persona})...")
-            prompt = main_prompt_template.format(context="沒有可用的上下文資料。", question=question)
-            return self.stream_and_save(question, prompt, [])
-
-    def _write_report_from_blueprint(self, blueprint_json: dict, full_context: str, question: str):
-        """
-        [V7 - 終極自適應解析器版本]
-        基於原則進行解析，能夠處理多種不斷進化的 JSON 結構。
-        核心原則：利用 AI 生成的「目錄」或「章節列表」作為尋找章節的路線圖。
-        """
-        logging.info("➡️ 進入章節撰寫器工作流...")
-        
-        chapter_writer_template = self.prompts.get('final_chapter_writer')
-        if not chapter_writer_template:
-            chapter_writer_template = self.prompts.get('chapter_writer') 
-            logging.warning("未找到 'final_chapter_writer.txt'，退回使用 'chapter_writer.txt'。")
-
-        chapters_to_write = []
-        toc_key = next((key for key in ['目录', 'table_of_contents', 'contents'] if key in blueprint_json and isinstance(blueprint_json[key], list)), None)
-        if toc_key:
-            logging.info(f"   -> 解析策略 1: 成功匹配 '{toc_key}' 列表結構，將其用作路線圖。")
-            for chapter_title in blueprint_json[toc_key]:
-                if chapter_title in blueprint_json and isinstance(blueprint_json[chapter_title], dict):
-                    chapters_to_write.append((chapter_title, blueprint_json[chapter_title]))
-        elif 'sections' in blueprint_json and isinstance(blueprint_json['sections'], list):
-            logging.info("   -> 解析策略 2: 成功匹配 'sections' 列表結構。")
-            for item in blueprint_json['sections']:
-                if isinstance(item, dict) and 'section_title' in item:
-                    chapters_to_write.append((item['section_title'], item.get('subsections', {})))
-
-        else:
-            logging.warning("   -> 未找到明確的目錄或章節列表，啟用降級策略：掃描所有頂層字典。")
-            chapters_to_write = [(key, value) for key, value in blueprint_json.items() if isinstance(value, dict)]
-
-        if not chapters_to_write:
-            logging.error("大綱 JSON 結構無法識別，或解析後章節列表為空。")
-            yield "## 大綱錯誤\n\n報告生成失敗，因為生成的大綱結構無法識別或為空。"
+                logging.warning("⚠️ LLM 在直接問答模式下沒有生成任何內容。")
+                fallback_message = "抱歉，我似乎對這個問題沒有想法。能否請您換個方式提問？"
+                yield f"data: {json.dumps({'type': 'content', 'content': fallback_message})}\n\n"
             return
-        # ----------------------------------------------------
 
-        is_first_chapter = True
-        for chapter_title, chapter_data in chapters_to_write:
+        logging.info(f"🚀 啟動 [KAIZEN 最終架構] 專家小組工作流 (Task ID: {task_id})...")
+        def check_cancellation():
+            if task_id and self.active_tasks.get(task_id, {}).get("is_cancelled"):
+                logging.warning(f"🛑 任務 {task_id} 已被使用者取消。")
+                raise InterruptedError(f"Task {task_id} cancelled by user.")
+        check_cancellation()
+        yield f"data: {json.dumps({'type': 'status', 'message': '步驟 1/4: 正在拆解研究任務...'})}\n\n"
+
+        task_decomp_template = self.prompts.get("task_decomposition")
+        if not task_decomp_template: raise ValueError("task_decomposition.txt 模板未找到！")
+        task_decomp_prompt_string = task_decomp_template.format(question=question)
+        sub_tasks_str = self.llm.invoke(task_decomp_prompt_string)
+        matches = re.findall(r"^\s*\d+\.\s*(.*)", sub_tasks_str, re.MULTILINE)
+        if not matches: raise ValueError("無法從 LLM 輸出中提取有效子任務。")
+        validated_tasks = list(dict.fromkeys([t.strip() for t in matches]))[:4]
+
+        if len(validated_tasks) < 2:
+            logging.warning(f"任務拆解後有效任務不足2個，轉為直接回答模式。")
+            direct_answer_prompt = self.prompts.get("direct_answer").format(question=question)
+            full_response = self.llm.invoke(direct_answer_prompt)
+            response_content = full_response.content if hasattr(full_response, 'content') else full_response
+            yield f"data: {json.dumps({'type': 'content', 'content': response_content})}\n\n"
+            return
+        sub_tasks = validated_tasks
+        logging.info(f"✅ 清理與驗證後的子任務 ({len(sub_tasks)} 條): {sub_tasks}")
+
+        executive_summaries, all_source_documents = [], []
+        analyst_template = self.prompts.get("research_synthesizer")
+        summarizer_template = self.prompts.get("memo_summarizer")
+        search_strategist_template = self.prompts.get("search_strategist")
+        if not all([analyst_template, summarizer_template, search_strategist_template]): raise ValueError("一個或多個關鍵的 Prompt 模板未找到！")
+        strategist_chain = search_strategist_template | self.llm | StrOutputParser()
+        memo_summarizer_chain = summarizer_template | self.llm | StrOutputParser()
+
+        for i, task in enumerate(sub_tasks):
+            check_cancellation()
+            yield f"data: {json.dumps({'type': 'status', 'message': f'步驟 2.{i+1}/{len(sub_tasks)}: 正在深度研究 \"{task[:20]}...\"'})}\n\n"
+            search_queries_str = strategist_chain.invoke({"question": question, "task": task})
+            search_queries = [line.strip() for line in re.findall(r"^\s*\d+\.\s*(.*)", search_queries_str, re.MULTILINE) if line.strip()] or [task]
+            logging.info(f"   -> 策略師為 '{task}' 生成了 {len(search_queries)} 個搜尋向量: {search_queries}")
+            task_specific_docs = []
+            for query in search_queries:
+                check_cancellation()
+                docs_for_query = self._agent_based_web_search(query)
+                if docs_for_query: task_specific_docs.extend(docs_for_query)
+            context = "注意：未能從網路找到相關資料。"
+            if task_specific_docs:
+                all_source_documents.extend(task_specific_docs)
+                unique_contents, unique_docs_for_synthesis = set(), []
+                for doc in task_specific_docs:
+                    if doc.page_content not in unique_contents:
+                        unique_contents.add(doc.page_content)
+                        unique_docs_for_synthesis.append(doc)
+                logging.info(f"   -> 為子任務 '{task}' 匯總了 {len(unique_docs_for_synthesis)} 份不重複的文件進行綜合分析。")
+                context = "\n---\n".join([f"來源：{doc.metadata.get('source', '網路')}\n內容：\n{doc.page_content}" for doc in unique_docs_for_synthesis])
+            else:
+                logging.warning(f"   -> 未能為子任務 '{task}' 找到任何網路資料。")
+            detailed_memo = self.llm.invoke(analyst_template.format(context=context, question=task))
+            check_cancellation()
+            yield f"data: {json.dumps({'type': 'status', 'message': f'步驟 2.{i+1}/{len(sub_tasks)}: 正在精煉 \"{task[:20]}...\" 的研究成果...'})}\n\n"
+            summary = memo_summarizer_chain.invoke({"memo": detailed_memo})
+            executive_summaries.append(f"### 研究主題: {task}\n{summary}")
+            logging.info(f"   -> 已為 '{task}' 生成執行摘要:\n{summary[:100]}...")
+        final_context = "\n\n---\n\n".join(executive_summaries)
+        
+        check_cancellation()
+        yield f"data: {json.dumps({'type': 'status', 'message': '步驟 3/4: 正在基於研究成果生成報告大綱...'})}\n\n"
+        blueprint_gen_template = self.prompts.get("answer_blueprint_generator")
+        if not blueprint_gen_template: raise ValueError("answer_blueprint_generator.txt 模板未找到！")
+        base_blueprint_prompt = blueprint_gen_template.format(context=final_context, question=question)
+        blueprint_json = None
+        for attempt in range(3):
+            check_cancellation()
+            prompt_to_use = base_blueprint_prompt if attempt == 0 else f"{base_blueprint_prompt}\n\n[修正指令]: 上次解析失敗，請嚴格只輸出包裹在 ```json ``` 中的代碼塊，不要包含任何其他文字。"
+            blueprint_str = self.llm.invoke(prompt_to_use)
+            logging.info(f"--- 大綱生成器回應 (嘗試 {attempt + 1}) ---\n{blueprint_str}\n--------------------")
             try:
-                if not is_first_chapter:
-                    yield "\n\n---\n\n"
-                is_first_chapter = False
-
-                key_points_str = self._generate_markdown_from_blueprint(chapter_data, level=1)
-
-                logging.info(f"   -> 正在為章節 '{chapter_title}' 撰寫內容並串流輸出...")
-                
-                chapter_prompt = chapter_writer_template.format(
-                   question=question,
-                   context=full_context,
-                   chapter_title=chapter_title,
-                   key_points=key_points_str
-                )
-                
-                raw_chapter_content = ""
-                for chunk in self.llm.stream(chapter_prompt):
-                    cleaned_chunk = re.sub(r"<think>.*?</think>", "", chunk, flags=re.DOTALL).strip(" \n")
-                    if cleaned_chunk:
-                        raw_chapter_content += cleaned_chunk + "" 
-                        yield cleaned_chunk
-
-                if not raw_chapter_content.strip():
-                    logging.warning(f"   -> ⚠️ 章節 '{chapter_title}' 的生成內容為空，已跳過。")
-                    yield f"## {chapter_title}\n\n_{{此章節生成內容為空}}_\n\n"
-
-            except Exception as e:
-                logging.error(f"❌ 在撰寫章節 '{chapter_title}' 時發生錯誤: {e}", exc_info=True)
-                yield f"## {chapter_title}\n\n_{{此章節生成失敗: {e}}}_\n\n"
+                match = re.search(r"```json\s*(\{.*?\})\s*```", blueprint_str, re.DOTALL) or re.search(r"(\{.*\})", blueprint_str, re.DOTALL)
+                if not match: raise json.JSONDecodeError("輸出中找不到 JSON 結構。", blueprint_str, 0)
+                blueprint_json = json.loads(match.group(1))
+                logging.info("✅ 成功解析回答大綱 JSON。")
+                break
+            except json.JSONDecodeError as e:
+                logging.warning(f"❌ 解析 JSON 失敗 (嘗試 {attempt + 1}): {e}")
+        if blueprint_json is None: raise ValueError("在 3 次嘗試後仍無法解析 JSON。")
         
-        logging.info("✅ 所有章節已串流輸出完畢。")
+        check_cancellation()
+        yield f"data: {json.dumps({'type': 'status', 'message': '步驟 4/4: 正在撰寫最終報告...'})}\n\n"
+        final_writer_template = self.prompts.get("final_report_writer")
+        if not final_writer_template: raise ValueError("關鍵的 'final_report_writer.txt' 模板未找到！")
+        final_report_prompt = final_writer_template.format(question=question, context=final_context, blueprint=json.dumps(blueprint_json, indent=2, ensure_ascii=False))
+        stream_iterator = self.llm.stream(final_report_prompt)
+        for chunk in stream_iterator:
+            check_cancellation()
+            content_chunk = chunk.content if hasattr(chunk, 'content') else chunk
+            yield f"data: {json.dumps({'type': 'content', 'content': content_chunk})}\n\n"
+        logging.info("報告正文串流生成完畢！正在進行最終組裝...")
+        unique_urls = {doc.metadata.get("source", "").replace("網頁瀏覽: ", "").strip() for doc in all_source_documents if doc.metadata.get("source", "").startswith("網頁瀏覽: ")}
+        reference_list_str = "\n".join([f"- {url}" for url in sorted(list(unique_urls)) if url])
+        if reference_list_str:
+            reference_section_str = f"\n\n---\n\n## 參考文獻\n{reference_list_str}"
+            logging.info(f"✅ 已提取 {len(unique_urls)} 條獨特的參考文獻。")
+            yield f"data: {json.dumps({'type': 'content', 'content': reference_section_str})}\n\n"
+        yield f"data: {json.dumps({'type': 'status', 'message': '報告生成完畢！'})}\n\n"
 
-    def _generate_markdown_from_blueprint(self, node: Any, level: int = 0) -> str:
-        """
-        遞迴地將大綱的 JSON 節點轉換為格式化的 Markdown 字串。
-        """
-        parts = []
-        indent = "  " * level  # level
+    def ask(self, question: str, stream: bool = True, task_id: str = None, bypass_assessment: bool = False) -> Generator[str, None, None]:
+        if not task_id:
+            task_id = f"task_{int(time.time() * 1000)}_{os.urandom(4).hex()}"
+        self.active_tasks[task_id] = {'is_cancelled': False}
+        logging.info(f"\n🤔 收到請求並註冊任務 ID: {task_id}，問題: '{question}'")
 
-        if isinstance(node, dict):
-            for key, value in node.items():
-                parts.append(f"{indent}- **{key}:**")
-                parts.append(self._generate_markdown_from_blueprint(value, level + 1))
-        elif isinstance(node, list):
-            for item in node:
-                parts.append(self._generate_markdown_from_blueprint(item, level))
-        else:
-            parts.append(f"{indent}- {str(node)}")
+        try:
+            # --- 路由決策 ---
+            if bypass_assessment:
+                logging.info(f"🛂 KAIZEN 路由：收到繞過指令，直接啟動深度研究工作流。")
+                yield from self._handle_complex_project(question, stream, task_id)
+
+            elif not self.use_web_search:
+                logging.info("🌐 KAIZEN 路由：網路研究已停用，強制執行直接問答。")
+                yield from self._handle_complex_project(question, stream, task_id)
+
+            elif re.search(r"https?://[\S]+", question):
+                url = re.search(r"https?://[\S]+", question).group(0)
+                logging.info(f"🔗 KAIZEN 路由：檢測到 URL，自動升格為深度研究任務。")
+                rewritten_question = f"請為我撰寫一份關於以下網址內容的深度總結報告：{url}。報告需要提煉出其核心觀點、關鍵信息和主要論據。"
+                yield from self._handle_complex_project(rewritten_question, stream, task_id)
             
-        return "\n".join(parts)
+            else:
+                assessor_template = self.prompts.get("query_assessor")
+                if not assessor_template: raise ValueError("query_assessor.txt 模板未找到！")
+                assessor_chain = assessor_template | self.llm | StrOutputParser()
+                assessment_str = assessor_chain.invoke({"question": question})
+                match = re.search(r"\{.*\}", assessment_str, re.DOTALL)
+                if not match: raise ValueError(f"問題評估師的回應中不包含有效的 JSON 結構: {assessment_str}")
+                assessment_json = json.loads(match.group(0))
+                assessment = assessment_json.get("assessment")
+                logging.info(f"🧐 問題評估師結論: {assessment}")
 
-    def _handle_complex_project(self, question: str, stream: bool = True):
-      try:
-          logging.info("🚀 啟動 [KAIZEN 最終架構] 專家小組工作流...")
-          yield f"data: {json.dumps({'type': 'status', 'message': '步驟 1/3: 正在拆解與研究任務...'})}\n\n"
-        
-          task_decomp_template = self.prompts.get('task_decomposition')
-          task_decomp_prompt_string = task_decomp_template.format(question=question)
-          sub_tasks_str = self.llm.invoke(task_decomp_prompt_string)
-          matches = re.findall(r"^\s*\d+\.\s*(.*)", sub_tasks_str, re.MULTILINE)
-          if not matches: raise ValueError("無法從 LLM 輸出中提取有效子任務。")
-          unique_tasks = list(dict.fromkeys([t.strip() for t in matches]))
-          validated_tasks = unique_tasks[:4]
-          if len(validated_tasks) < 2: raise ValueError(f"任務拆解後有效任務不足2個。")
-          sub_tasks = validated_tasks
-          logging.info(f"✅ 清理與驗證後的子任務 ({len(sub_tasks)} 條): {sub_tasks}")
+                if assessment == "specific_topic":
+                    yield from self._handle_complex_project(question, stream, task_id)
+                elif assessment == "broad_concept":
+                    yield from self._handle_clarification(question, task_id)
+                else:
+                    logging.warning(f"⚠️ 未知的評估結果: {assessment}。將直接執行深度研究。")
+                    yield from self._handle_complex_project(question, stream, task_id)
+            
+            yield from self._send_done_signal()
 
-          executive_summaries = [] 
-          all_source_documents = []
-          analyst_template = self.prompts.get('research_synthesizer')
-          summarizer_template = self.prompts.get('memo_summarizer')
-          search_strategist_template = self.prompts.get('search_strategist')
-          if not all([analyst_template, summarizer_template, search_strategist_template]):
-              raise ValueError("一個或多個關鍵的 Prompt 模板 (research_synthesizer, memo_summarizer, search_strategist) 未找到！")
-          strategist_chain = search_strategist_template | self.llm | StrOutputParser()         
-          memo_summarizer_chain = summarizer_template | self.llm | StrOutputParser()
-
-          for i, task in enumerate(sub_tasks):
-              yield f"data: {json.dumps({'type': 'status', 'message': f'步驟 1.{i+1}/{len(sub_tasks)}: 正在研究 \"{task[:20]}...\"'})}\n\n"
-              search_queries_str = strategist_chain.invoke({"question": question, "task": task})
-              search_queries = [line.strip() for line in re.findall(r"^\s*\d+\.\s*(.*)", search_queries_str, re.MULTILINE) if line.strip()]
-              if not search_queries:
-                  search_queries = [task] 
-                  logging.info(f"   -> 策略師為 '{task}' 生成了 {len(search_queries)} 個搜尋向量: {search_queries}")
-
-              task_specific_docs = []
-              for j, query in enumerate(search_queries):
-                  #yield f"data: {json.dumps({'type': 'status', 'message': f'步驟 1.{i+1}/{len(sub_tasks)}: 正在執行搜尋 {j+1}/{len(search_queries)}: \"{query[:25]}...\"'})}\n\n"
-                  docs_for_query = self._agent_based_web_search(query)
-                  if docs_for_query:
-                      task_specific_docs.extend(docs_for_query)
-          
-              if task_specific_docs:
-                  all_source_documents.extend(task_specific_docs)
-                  unique_contents = set()
-                  unique_docs_for_synthesis = []
-                  for doc in task_specific_docs:
-                      if doc.page_content not in unique_contents:
-                          unique_contents.add(doc.page_content)
-                          unique_docs_for_synthesis.append(doc)
-                  logging.info(f"   -> 為子任務 '{task}' 匯總了 {len(unique_docs_for_synthesis)} 份不重複的文件進行綜合分析。")
-                  context = "\n---\n".join([f"來源：{doc.metadata.get('source', '網路')}\n內容：\n{doc.page_content}" for doc in unique_docs_for_synthesis])
-              else:
-                  logging.warning(f"   -> 未能為子任務 '{task}' 找到任何網路資料。")
-                  context = "注意：未能從網路找到相關資料。"
-              detailed_memo = self.llm.invoke(analyst_template.format(context=context, question=task))
-              yield f"data: {json.dumps({'type': 'status', 'message': f'步驟 2.{i+1}/{len(sub_tasks)}: 正在精煉 \"{task[:20]}...\" 的研究成果...'})}\n\n"
-              summary = memo_summarizer_chain.invoke({"memo": detailed_memo})  
-              executive_summaries.append(f"### 研究主題: {task}\n{summary}")
-              logging.info(f"   -> 已為 '{task}' 生成執行摘要:\n{summary[:100]}...")
-          final_context = "\n\n---\n\n".join(executive_summaries)
-
-          yield f"data: {json.dumps({'type': 'status', 'message': '步驟 2/3: 正在生成最終報告大綱...'})}\n\n"
-          blueprint_gen_template = self.prompts.get('answer_blueprint_generator')
-          base_blueprint_prompt = blueprint_gen_template.format(context=final_context, question=question)
-          blueprint_json = None
-
-          for attempt in range(3):
-              prompt_to_use = base_blueprint_prompt if attempt == 0 else f"{base_blueprint_prompt}\n\n[修正指令]: 上次解析失敗，請嚴格輸出 JSON。"
-              blueprint_str = self.llm.invoke(prompt_to_use)
-              logging.info(f"--- 大綱生成器回應 (嘗試 {attempt + 1}) ---\n{blueprint_str}\n--------------------")
-              try:
-                  match = re.search(r"```json\s*(\{.*?\})\s*```", blueprint_str, re.DOTALL) or re.search(r"(\{.*\})", blueprint_str, re.DOTALL)
-                  if not match:
-                      raise json.JSONDecodeError("輸出中找不到 JSON 結構。", blueprint_str, 0)
-                  blueprint_json = json.loads(match.group(1))
-                  logging.info(f"✅ 成功解析回答大綱 JSON。")
-                  break
-              except json.JSONDecodeError as e:
-                  logging.warning(f"❌ 解析 JSON 失敗 (嘗試 {attempt + 1}): {e}\n原始輸出:\n{blueprint_str}")
-          if blueprint_json is None: raise ValueError("在 3 次嘗試後仍無法解析 JSON。")
-
-          yield f"data: {json.dumps({'type': 'status', 'message': '步驟 4/4: 正在撰寫最終報告...'})}\n\n"
-      
-          final_writer_template = self.prompts.get('final_report_writer')
-          if not final_writer_template:
-            raise ValueError("關鍵的 'final_report_writer.txt' 模板未找到！")
-          final_report_prompt = final_writer_template.format(
-              question=question,
-              context=final_context,
-              blueprint=json.dumps(blueprint_json, indent=2, ensure_ascii=False),
-              #references=reference_list_str
-          )
-
-          full_answer_body = ""
-          for chunk in self.llm.stream(final_report_prompt):
-              full_answer_body += chunk
-              yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
-      
-          logging.info("報告串流生成完畢！正在進行最終清理與儲存...")
-
-          unique_urls = set()
-          for doc in all_source_documents:
-              source = doc.metadata.get('source', '')
-              if source.startswith("網頁瀏覽: "):
-                  url = source.replace("網頁瀏覽: ", "").strip()
-                  if url: unique_urls.add(url)
-          reference_list_str = "\n".join([f"- {url}" for url in sorted(list(unique_urls))])
-          reference_section_str = f"\n\n---\n\n## 參考文獻\n{reference_list_str}"
-          logging.info(f"✅ 已提取 {len(unique_urls)} 條獨特的參考文獻。")
-      
-          yield f"data: {json.dumps({'type': 'content', 'content': reference_section_str})}\n\n"
-          cleaned_body = re.sub(r"<think>.*?</think>", "", full_answer_body, flags=re.DOTALL).strip()
-          final_complete_report = cleaned_body + reference_section_str
-          
-          if all_source_documents:
-              yield f"data: {json.dumps({'type': 'sources', 'data': [{'page_content': '...', 'metadata': doc.metadata} for doc in all_source_documents]})}\n\n"
-
-          if final_complete_report.strip():
-              self.save_qa(question, final_complete_report)
-          
-          yield f"data: {json.dumps({'type': 'status', 'message': '報告生成完畢！'})}\n\n"
-
-      except Exception as e:
-          logging.error(f"❌ 在專家小組工作流中發生嚴重錯誤: {e}", exc_info=True)
-          yield f"data: {json.dumps({'type': 'error', 'error': f'抱歉，執行複雜專案時發生錯誤: {e}'})}\n\n"
-      finally:
-          yield f"data: [DONE]\n\n"
-
-    def save_qa(self, question, answer):
-        if not answer or not answer.strip():
-            return
-        qa_pair_content = f"問題: {question}\n回答: {answer}"
-        metadata = {"source": "conversation", "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-        new_doc = Document(page_content=qa_pair_content, metadata=metadata)
-        self.vector_db.add_documents([new_doc])
-        self.update_ensemble_retriever(new_docs=[new_doc])
-        logging.info("   -> 對話歷史存儲並同步至混合索引完畢！")
+        except GeneratorExit:
+            logging.warning(f"🔌 客戶端在任務 {task_id} 執行期間斷開連接。正在靜默清理。")
+        except InterruptedError:
+            logging.info(f"🛑 任務 {task_id} 已被使用者成功中止。")
+            yield f"data: {json.dumps({'type': 'status', 'message': '任務已取消。'})}\n\n"
+            yield from self._send_done_signal()
+        except Exception as e:
+            logging.error(f"❌ 在 ASK 指揮官模式中發生嚴重錯誤: {e}", exc_info=True)
+            error_message = f'抱歉，執行時發生了無法預期的錯誤: {str(e)}'
+            yield f"data: {json.dumps({'type': 'error', 'content': error_message})}\n\n"
+            yield from self._send_done_signal()
+        finally:
+            self._perform_final_cleanup(task_id)

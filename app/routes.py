@@ -1,6 +1,6 @@
 import os
-from werkzeug.utils import secure_filename
-from flask import Blueprint, request, jsonify, Response, render_template, g
+import logging
+from flask import Blueprint, request, jsonify, Response, render_template
 from . import rag_chat, AVAILABLE_MODELS
 
 main = Blueprint('main', __name__)
@@ -11,114 +11,80 @@ def index():
 
 @main.route('/api/models', methods=['GET'])
 def get_models_and_settings():
+    """獲取可用模型列表和當前設定。"""
     if not rag_chat:
         return jsonify({"error": "RAG service not initialized"}), 503
     return jsonify({
         "models": AVAILABLE_MODELS, 
         "current_model": rag_chat.current_llm_model,
-        "history_enabled": rag_chat.use_history,
-        "wikipedia_enabled": rag_chat.use_wikipedia,
         "web_search_enabled": rag_chat.use_web_search
     })
 
+@main.route('/api/set_model', methods=['POST'])
+def set_model():
+    """設定當前使用的 LLM 模型。"""
+    if not rag_chat: return jsonify({"success": False, "error": "RAG service not initialized"}), 503
+    data = request.get_json()
+    model_name = data.get('model')
+    if not model_name or model_name not in AVAILABLE_MODELS:
+        return jsonify({"success": False, "error": "無效或不可用的模型名稱"}), 400
+    if rag_chat.set_llm_model(model_name):
+        return jsonify({"success": True})
+    return jsonify({"success": False, "error": "伺服器切換模型時發生內部錯誤"}), 500
+
 @main.route('/api/set_web_search', methods=['POST'])
 def set_web_search():
+    """啟用或停用網路研究功能。"""
     if not rag_chat:
         return jsonify({"success": False, "error": "RAG service not initialized"}), 503
     enabled = request.json.get('enabled', False)
     rag_chat.set_web_search(enabled)
-    if enabled:
-        rag_chat.set_history_retrieval(False)
-        rag_chat.set_wikipedia_search(False)
     return jsonify({"success": True, "message": f"Web search set to {enabled}"})
-    
-@main.route('/api/set_model', methods=['POST'])
-def set_model():
-    if not rag_chat: return jsonify({"success": False, "error": "RAG service not initialized"}), 503
-    data = request.get_json(); model_name = data.get('model')
-    if not model_name or model_name not in AVAILABLE_MODELS: return jsonify({"success": False, "error": "無效或不可用的模型名稱"}), 400
-    if rag_chat.set_llm_model(model_name): return jsonify({"success": True})
-    return jsonify({"success": False, "error": "伺服器切換模型時發生內部錯誤"}), 500
-
-@main.route('/api/set_history', methods=['POST'])
-def set_history():
-    if not rag_chat: return jsonify({"success": False, "error": "RAG service not initialized"}), 503
-    data = request.get_json(); enabled = data.get('enabled')
-    if not isinstance(enabled, bool): return jsonify({"success": False, "error": "無效的參數"}), 400
-    rag_chat.set_history_retrieval(enabled); return jsonify({"success": True})
-
-@main.route('/api/set_wikipedia', methods=['POST'])
-def set_wikipedia():
-    if not rag_chat: return jsonify({"success": False, "error": "RAG service not initialized"}), 503
-    data = request.get_json(); enabled = data.get('enabled')
-    if not isinstance(enabled, bool): return jsonify({"success": False, "error": "無效的參數"}), 400
-    rag_chat.set_wikipedia_search(enabled); return jsonify({"success": True})
 
 @main.route('/ask', methods=['GET'])
 def handle_ask():
+    """處理主要的問答請求，以事件流形式返回結果。"""
     question = request.args.get('question')
-    if not question: return Response("Error: No question provided", status=400)
-    if not rag_chat or not rag_chat.llm: return Response("Error: LLM not available", status=503)
-    return Response(rag_chat.ask(question, stream=True), mimetype='text/event-stream')
+    task_id = request.args.get('task_id')
+    bypass_assessment = request.args.get('bypass_assessment', 'false').lower() == 'true'
 
-@main.route('/api/records', methods=['GET'])
-def get_records():
+    if not question:
+        # 對於 API 錯誤，回傳一個 JSON 會更標準
+        error_message = json.dumps({"type": "error", "content": "Error: No question provided"})
+        return Response(f"data: {error_message}\n\n", status=400, mimetype='text/event-stream')
+
+    if not rag_chat or not rag_chat.llm:
+        error_message = json.dumps({"type": "error", "content": "Error: RAG service not initialized or LLM not available."})
+        return Response(f"data: {error_message}\n\n", status=503, mimetype='text/event-stream')
+
+    # 1. 從 services.py 的 ask 函式獲取生成器物件
+    generator = rag_chat.ask(
+        question=question, 
+        stream=True, 
+        task_id=task_id, 
+        bypass_assessment=bypass_assessment
+    )
+    
+    # 2. 將生成器包裝成 Response 物件，並設定正確的 MIME 類型
+    #    這個 return 語句現在是此函式唯一的、正常的出口
+    return Response(generator, mimetype='text/event-stream')
+
+@main.route('/api/cancel_task', methods=['POST'])
+def cancel_task():
+    """取消一個正在運行的深度研究任務。"""
     if not rag_chat:
-        return jsonify({"error": "RAG service not initialized"}), 503
-    try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 50, type=int)
-        search_query = request.args.get('query', "", type=str)
-        paginated_data = rag_chat.search_records(
-            query=search_query,
-            page=page,
-            per_page=per_page
-        )
-        return jsonify(paginated_data)
-    except Exception as e:
-        print(f"❌ 獲取紀錄時發生錯誤: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@main.route('/api/upload_document', methods=['POST'])
-def upload_document():
-    if not rag_chat:
-        return jsonify({"success": False, "error": "RAG 服務未初始化"}), 503
-    if 'file' not in request.files:
-        return jsonify({"success": False, "error": "請求中未包含文件"}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"success": False, "error": "未選擇文件"}), 400
-
-    upload_folder = 'uploads'
-    os.makedirs(upload_folder, exist_ok=True)
-    filename = secure_filename(file.filename)
-    file_path = os.path.join(upload_folder, filename)
-
-    try:
-        file.save(file_path)
-        rag_chat.add_document(file_path)
-        return jsonify({"success": True, "message": f"文件 '{filename}' 已成功處理並加入索引。"})
-    except Exception as e:
-        print(f"❌ 文件處理時發生嚴重錯誤: {e}")
-        return jsonify({"success": False, "error": f"處理文件時發生錯誤: {str(e)}"}), 500
-
-@main.route('/api/delete', methods=['POST'])
-def delete_record():
-    if not rag_chat: return jsonify({"success": False, "error": "RAG 服務未初始化"}), 503
-        
+        return jsonify({"success": False, "error": "RAG service not initialized"}), 503
     data = request.get_json()
-    doc_id = data.get('id')
-    if not doc_id: return jsonify({"success": False, "error": "請求中缺少 ID"}), 400
-        
-    try:
-        rag_chat.vector_db.delete([doc_id])
-        print(f"✅ 成功從向量資料庫刪除 ID: {doc_id}。")
-        
-        print("🔄 刪除後觸發索引重建...")
-        rag_chat.update_ensemble_retriever(full_rebuild=True)
-        return jsonify({"success": True, "message": f"成功刪除 ID: {doc_id} 且索引已同步。"})
-    except Exception as e:
-        return jsonify({"success": False, "error": f"刪除時發生錯誤: {e}"}), 500
+    task_id = data.get('task_id')
+    if not task_id:
+        return jsonify({"success": False, "error": "請求中缺少 task_id"}), 400
+    if task_id in rag_chat.active_tasks:
+        rag_chat.active_tasks[task_id]['is_cancelled'] = True
+        logging.info(f"✅ 收到取消請求，已標記 Task ID: {task_id}")
+        return jsonify({"success": True, "message": f"任務 {task_id} 已標記為取消。"})
+    else:
+        logging.warning(f"⚠️ 收到對一個不存在或已完成的任務的取消請求: {task_id}")
+        return jsonify({"success": False, "error": "任務不存在或已完成。"}), 404
 
 @main.route('/favicon.ico')
 def favicon():
