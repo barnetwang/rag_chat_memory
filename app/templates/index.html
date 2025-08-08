@@ -147,6 +147,50 @@
         .theme-toggle:hover { transform: scale(1.1); }
         .clarification-btn { background-color: var(--surface-color); border: 1px solid var(--accent-color); color: var(--accent-color); padding: 0.5rem 1rem; border-radius: 20px; cursor: pointer; transition: all 0.2s; text-align: left; }
         .clarification-btn:hover { background-color: var(--accent-color); color: white; }
+		
+		/* --- History Panel Styles --- */
+        #history-list-container { max-height: 70vh; overflow-y: auto; }
+        .history-item {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .history-item:last-child { border-bottom: none; }
+        .history-item:hover { background-color: rgba(255, 255, 255, 0.05); }
+        .history-title {
+            font-weight: 500;
+            color: var(--primary-text);
+            margin: 0 0 0.5rem 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .history-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .history-timestamp {
+            font-size: 0.8em;
+            color: var(--secondary-text);
+        }
+        .history-actions button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0.25rem;
+        }
+        .delete-history-btn svg {
+            stroke: var(--danger-color);
+            transition: stroke 0.2s;
+        }
+        .delete-history-btn:hover svg { stroke: var(--danger-hover); }
+        .no-history {
+            text-align: center;
+            padding: 2rem;
+            color: var(--secondary-text);
+        }
     </style>
 </head>
 
@@ -218,7 +262,11 @@
 
             <div class="right-panel">
                 <!--<div class="panel-tabs"><button class="panel-tab-button active" onclick="openPanelTab(event, 'settings')">設定</button></div>-->
-                <div id="settings" class="panel-tab-content active">
+                <div class="panel-tabs">
+                    <button class="panel-tab-button active" onclick="openPanelTab(event, 'settings')">設定</button>
+                    <button class="panel-tab-button" onclick="openPanelTab(event, 'history')">歷史紀錄</button>
+                </div>
+				<div id="settings" class="panel-tab-content active">
                     <div class="card">
                         <h3 class="card-header">模型與功能</h3>
                         <div class="card-body">
@@ -226,6 +274,14 @@
                             <select id="model-selector"><option value="">正在載入...</option></select>
                             <span id="model-status"></span>
                         </div>
+				<div id="history" class="panel-tab-content">
+                    <div class="card">
+                        <h3 class="card-header">專案歷史</h3>
+                        <div class="card-body no-padding" id="history-list-container">
+                            <div class="no-history">正在載入歷史紀錄...</div>
+                        </div>
+                    </div>
+                </div>
                         <div class="card-body no-padding">
                             <div class="toggle-switch-container">
                                 <input type="checkbox" id="web-search-toggle" class="toggle-input" checked>
@@ -261,7 +317,132 @@
                 chatInput.style.height = (chatInput.scrollHeight) + 'px';
             });
             loadModelsAndSettings();
+			loadHistoryList();
         });
+		
+        function openPanelTab(evt, tabName) {
+            // 處理頁籤切換的邏輯
+            const tabcontent = document.getElementsByClassName("panel-tab-content");
+            for (let i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            const tablinks = document.getElementsByClassName("panel-tab-button");
+            for (let i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+
+            // 如果點擊的是歷史紀錄頁籤，重新載入列表
+            if (tabName === 'history') {
+                loadHistoryList();
+            }
+        }
+		
+		async function loadHistoryList() {
+            const container = document.getElementById('history-list-container');
+            container.innerHTML = '<div class="no-history">正在載入...</div>';
+            try {
+                const response = await fetch('/api/history');
+                const historyData = await response.json();
+                renderHistoryList(historyData);
+            } catch (error) {
+                console.error("載入歷史紀錄失敗:", error);
+                container.innerHTML = '<div class="no-history">載入失敗</div>';
+            }
+        }
+		
+		function renderHistoryList(historyData) {
+            const container = document.getElementById('history-list-container');
+            if (!historyData || historyData.length === 0) {
+                container.innerHTML = '<div class="no-history">目前沒有歷史紀錄</div>';
+                return;
+            }
+            container.innerHTML = '';
+            historyData.forEach(entry => {
+                const item = document.createElement('div');
+                item.className = 'history-item';
+                item.innerHTML = `
+                    <p class="history-title" title="${escapeHtml(entry.title)}">${escapeHtml(entry.title)}</p>
+                    <div class="history-meta">
+                        <span class="history-timestamp">${new Date(entry.timestamp).toLocaleString()}</span>
+                        <div class="history-actions">
+                            <button class="delete-history-btn" data-id="${entry.id}" title="刪除">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                // 點擊項目本身來查看報告
+                item.querySelector('.history-title').addEventListener('click', () => viewHistoryEntry(entry.id));
+                item.querySelector('.history-timestamp').addEventListener('click', () => viewHistoryEntry(entry.id));
+                
+                // 點擊刪除按鈕
+                item.querySelector('.delete-history-btn').addEventListener('click', (e) => {
+                    e.stopPropagation(); // 防止觸發查看事件
+                    deleteHistoryEntry(entry.id, entry.title);
+                });
+
+                container.appendChild(item);
+            });
+        }
+		
+		async function viewHistoryEntry(entryId) {
+            try {
+                const response = await fetch(`/api/history/${entryId}`);
+                const entry = await response.json();
+                
+                // 在左側對話框中顯示歷史報告
+                const userMessageWrapper = appendMessage(entry.title, 'user');
+                const { contentDiv, actionsDiv } = appendMessage('', 'bot');
+                
+                contentDiv.innerHTML = marked.parse(entry.report);
+                
+                // 為歷史報告也加上下載按鈕
+                const downloadButton = document.createElement('button');
+                downloadButton.className = 'download-btn';
+                downloadButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span>下載報告 (.md)</span>`;
+                downloadButton.onclick = () => downloadReport(entry.report, 'md');
+                actionsDiv.appendChild(downloadButton);
+
+                chatBox.scrollTop = chatBox.scrollHeight;
+
+            } catch (error) {
+                console.error(`查看歷史紀錄 ${entryId} 失敗:`, error);
+                alert("無法載入該歷史報告。");
+            }
+        }
+		
+		async function deleteHistoryEntry(entryId, entryTitle) {
+            if (confirm(`您確定要刪除「${entryTitle}」這份報告嗎？`)) {
+                try {
+                    await fetch(`/api/history/${entryId}`, { method: 'DELETE' });
+                    loadHistoryList(); // 成功後刷新列表
+                } catch (error) {
+                    console.error(`刪除歷史紀錄 ${entryId} 失敗:`, error);
+                    alert("刪除失敗。");
+                }
+            }
+        }
+		
+		async function saveReportToHistory(title, report) {
+            try {
+                const response = await fetch('/api/history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: title, report: report })
+                });
+                if (response.ok) {
+                    console.log("報告已成功儲存至歷史紀錄。");
+                    // 如果使用者正在看歷史頁籤，就刷新它
+                    if (document.getElementById('history').style.display === 'block') {
+                        loadHistoryList();
+                    }
+                }
+            } catch (error) {
+                console.error("儲存歷史紀錄失敗:", error);
+            }
+        }
         
         // --- UI Update Functions ---
         function updateProgress(step, message = '') {
@@ -397,6 +578,7 @@
                     downloadButton.onclick = () => downloadReport(fullMarkdownResponse, 'md');
                     actionsDiv.innerHTML = ''; 
                     actionsDiv.appendChild(downloadButton);
+					saveReportToHistory(originalBroadQuestion, fullMarkdownResponse);
                 }
                 currentTaskId = null;
             };
