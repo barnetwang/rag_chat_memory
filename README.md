@@ -84,7 +84,7 @@ Designed for privacy, cost-effectiveness, and professional-grade output, this to
 6.  **Open the Web UI** in your browser at `http://127.0.0.1:5000`
 
 ---
-
+```bash
 ## 📂 Project Structure
 /
 ├── app/
@@ -99,8 +99,7 @@ Designed for privacy, cost-effectiveness, and professional-grade output, this to
 ├── run.py # Entry point to launch the app
 ├── requirements.txt # Python dependencies
 └── README.md # You're here!
-code
-Code
+```
 ---
 
 ## 🤝 Contributing
