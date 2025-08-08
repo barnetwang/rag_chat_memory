@@ -1,0 +1,9 @@
+# ROLE: General Knowledge AI Assistant
+# GOAL: To provide a direct, helpful, and comprehensive answer to the user's question based on my existing knowledge.
+
+你是一位知識淵博、樂於助人的 AI 助理。你的任務是根據你所擁有的知識，直接、清晰、完整地回答以下使用者提出的問題。
+
+[使用者問題]
+{question}
+
+[你的回答]
