@@ -1,5 +1,9 @@
 import os
+import json
 import logging
+import base64
+import binascii
+import urllib.parse
 from flask import Blueprint, request, jsonify, Response, render_template
 from . import rag_chat, AVAILABLE_MODELS
 
@@ -11,18 +15,32 @@ def index():
 
 @main.route('/api/models', methods=['GET'])
 def get_models_and_settings():
-    """獲取可用模型列表和當前設定。"""
+    print(f"--- API HIT: /api/models ---")
+    print(f"AVAILABLE_MODELS: {AVAILABLE_MODELS}")
+    print(f"rag_chat is None: {rag_chat is None}")
+
+    if not AVAILABLE_MODELS:
+        print("--- API RESPONSE: No models available (503) ---")
+        return jsonify({
+            "error": "無法獲取模型列表。請確認 Ollama 服務正在運行，並且至少已拉取一個模型 (例如: ollama pull llama3)。"
+        }), 503
+
     if not rag_chat:
-        return jsonify({"error": "RAG service not initialized"}), 503
-    return jsonify({
-        "models": AVAILABLE_MODELS, 
+        print("--- API RESPONSE: RAG not initialized (503) ---")
+        return jsonify({
+            "error": "RAG 服務未初始化，但模型列表可用。請檢查後端日誌。"
+        }), 503
+
+    response_data = {
+        "models": AVAILABLE_MODELS,
         "current_model": rag_chat.current_llm_model,
         "web_search_enabled": rag_chat.use_web_search
-    })
+    }
+    print(f"--- API RESPONSE: Success (200), Data: {response_data} ---")
+    return jsonify(response_data)
 
 @main.route('/api/set_model', methods=['POST'])
 def set_model():
-    """設定當前使用的 LLM 模型。"""
     if not rag_chat: return jsonify({"success": False, "error": "RAG service not initialized"}), 503
     data = request.get_json()
     model_name = data.get('model')
@@ -34,7 +52,6 @@ def set_model():
 
 @main.route('/api/set_web_search', methods=['POST'])
 def set_web_search():
-    """啟用或停用網路研究功能。"""
     if not rag_chat:
         return jsonify({"success": False, "error": "RAG service not initialized"}), 503
     enabled = request.json.get('enabled', False)
@@ -43,13 +60,11 @@ def set_web_search():
 
 @main.route('/ask', methods=['GET'])
 def handle_ask():
-    """處理主要的問答請求，以事件流形式返回結果。"""
     question = request.args.get('question')
     task_id = request.args.get('task_id')
     bypass_assessment = request.args.get('bypass_assessment', 'false').lower() == 'true'
 
     if not question:
-        # 對於 API 錯誤，回傳一個 JSON 會更標準
         error_message = json.dumps({"type": "error", "content": "Error: No question provided"})
         return Response(f"data: {error_message}\n\n", status=400, mimetype='text/event-stream')
 
@@ -57,21 +72,40 @@ def handle_ask():
         error_message = json.dumps({"type": "error", "content": "Error: RAG service not initialized or LLM not available."})
         return Response(f"data: {error_message}\n\n", status=503, mimetype='text/event-stream')
 
-    # 1. 從 services.py 的 ask 函式獲取生成器物件
     generator = rag_chat.ask(
         question=question, 
         stream=True, 
         task_id=task_id, 
         bypass_assessment=bypass_assessment
     )
-    
-    # 2. 將生成器包裝成 Response 物件，並設定正確的 MIME 類型
-    #    這個 return 語句現在是此函式唯一的、正常的出口
+    return Response(generator, mimetype='text/event-stream')
+
+@main.route('/api/write_report', methods=['GET'])
+def write_report_from_blueprint():
+    logging.info("--- API HIT: /api/write_report ---")
+    if not rag_chat:
+        logging.error("RAG service not initialized during write_report call.")
+        error_message = json.dumps({"type": "error", "content": "Error: RAG service not initialized."})
+        return Response(f"data: {error_message}\n\n", status=503, mimetype='text/event-stream')
+
+    task_id = request.args.get('task_id')
+    if not task_id:
+        logging.warning("No task_id provided to /api/write_report.")
+        error_message = json.dumps({"type": "error", "content": "Error: No task_id provided for report writing."})
+        return Response(f"data: {error_message}\n\n", status=400, mimetype='text/event-stream')
+
+    logging.info(f"Received request to write report for task_id: {task_id}")
+
+    if task_id not in rag_chat.active_tasks:
+        logging.error(f"Task ID {task_id} not found in active tasks.")
+        error_message = json.dumps({"type": "error", "content": f"Error: Task ID {task_id} not found or has expired."})
+        return Response(f"data: {error_message}\n\n", status=404, mimetype='text/event-stream')
+
+    generator = rag_chat.stream_write_report(task_id=task_id)   
     return Response(generator, mimetype='text/event-stream')
 
 @main.route('/api/cancel_task', methods=['POST'])
 def cancel_task():
-    """取消一個正在運行的深度研究任務。"""
     if not rag_chat:
         return jsonify({"success": False, "error": "RAG service not initialized"}), 503
     data = request.get_json()
@@ -85,6 +119,39 @@ def cancel_task():
     else:
         logging.warning(f"⚠️ 收到對一個不存在或已完成的任務的取消請求: {task_id}")
         return jsonify({"success": False, "error": "任務不存在或已完成。"}), 404
+
+@main.route('/api/history', methods=['GET'])
+def get_history():
+    if not rag_chat: return jsonify({"error": "RAG service not initialized"}), 503
+    history_list = rag_chat.get_history_list()
+    return jsonify(history_list)
+
+@main.route('/api/history/<int:entry_id>', methods=['GET'])
+def get_history_entry(entry_id):
+    if not rag_chat: return jsonify({"error": "RAG service not initialized"}), 503
+    entry = rag_chat.get_history_entry(entry_id)
+    if entry:
+        return jsonify(entry)
+    return jsonify({"error": "找不到該歷史紀錄"}), 404
+
+@main.route('/api/history', methods=['POST'])
+def add_history_entry():
+    if not rag_chat: return jsonify({"error": "RAG service not initialized"}), 503
+    data = request.get_json()
+    title = data.get('title')
+    report = data.get('report')
+    if not title or not report:
+        return jsonify({"error": "請求中缺少 'title' 或 'report'"}), 400
+    
+    entry_id = rag_chat.add_history_entry(title, report)
+    return jsonify({"success": True, "id": entry_id}), 201
+
+@main.route('/api/history/<int:entry_id>', methods=['DELETE'])
+def delete_history_entry(entry_id):
+    if not rag_chat: return jsonify({"error": "RAG service not initialized"}), 503
+    if rag_chat.delete_history_entry(entry_id):
+        return jsonify({"success": True})
+    return jsonify({"error": "找不到該歷史紀錄或刪除失敗"}), 404
 
 @main.route('/favicon.ico')
 def favicon():

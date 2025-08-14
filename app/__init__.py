@@ -1,3 +1,5 @@
+import atexit
+import atexit
 from flask import Flask
 from config import Config
 from .services import ConversationalRAG, get_ollama_models
@@ -7,10 +9,6 @@ rag_chat = None
 AVAILABLE_MODELS = []
 
 def create_app(config_class=Config):
-    """
-    應用程式工廠函數 (Application Factory)。
-    創建、配置並初始化應用所需的所有服務。
-    """
     app = Flask(__name__)
     app.config.from_object(config_class)
 
@@ -41,13 +39,19 @@ def create_app(config_class=Config):
                 'VECTOR_SEARCH_K': app.config['VECTOR_SEARCH_K'],
                 'BM25_SEARCH_K': app.config['BM25_SEARCH_K'],
                 'ENSEMBLE_WEIGHTS': app.config['ENSEMBLE_WEIGHTS'],
-                'EMBEDDING_DEVICE': app.config['EMBEDDING_DEVICE']
+                'EMBEDDING_DEVICE': app.config['EMBEDDING_DEVICE'],
+                'OLLAMA_REQUEST_TIMEOUT': app.config['OLLAMA_REQUEST_TIMEOUT']
             }
             rag_chat = ConversationalRAG(config=rag_config)
             print(f"✅ RAG 核心服務已就緒 (使用模型: {llm_model})。")
         
-            print("註冊應用程式關閉時的清理程序...")
-            print("✅ 清理程序已註冊。")
+            def cleanup():
+                print("--- 正在執行應用程式關閉前的清理程序 ---")
+                if rag_chat:
+                    rag_chat.close()
+            
+            atexit.register(cleanup)
+            print("✅ 應用程式關閉時的清理程序已註冊。")
         else:
             rag_chat = None
 
