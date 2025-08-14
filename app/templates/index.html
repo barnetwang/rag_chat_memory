@@ -9,53 +9,49 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         :root {
-            --bg-color: #1a1a1a;
-            --primary-text: #f0f0f0;
+            --bg-color: #181818;
+            --primary-text: #e8e8e8;
             --secondary-text: #a0a0a0;
-            --surface-color: #242424;
-            --border-color: #3a3a3a;
+            --surface-color: #212121;
+            --border-color: #333;
             --accent-color: #8257E5;
             --accent-hover: #9466FF;
             --danger-color: #e53935;
             --danger-hover: #c62828;
             --success-color: #4CAF50;
             --info-color: #2196F3;
+            --card-shadow: rgba(0, 0, 0, 0.2) 0px 5px 15px;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
         }
 
         .light-mode {
-            --bg-color: #f5f5f7;
+            --bg-color: #f7f7f7;
             --primary-text: #1d1d1f;
             --secondary-text: #515154;
             --surface-color: #ffffff;
-            --border-color: #d2d2d7;
+            --border-color: #e5e5e5;
             --accent-color: #0071e3;
             --accent-hover: #0077ed;
             --danger-color: #d70015;
             --danger-hover: #c30013;
             --success-color: #28a745;
             --info-color: #17a2b8;
+            --card-shadow: rgba(0, 0, 0, 0.08) 0px 5px 15px;
         }
 
         /* --- Global Light Mode Styles --- */
-        .light-mode h1, .light-mode h2, .light-mode h3, .light-mode h4, .light-mode h5, .light-mode h6, .light-mode p, .light-mode label, .light-mode .toggle-text, .light-mode #recordCount { color: var(--primary-text); }
-        .light-mode #app-logo { filter: invert(1); }
+        .light-mode h1, .light-mode h2, .light-mode h3, .light-mode h4, .light-mode h5, .light-mode h6, .light-mode p, .light-mode label, .light-mode .toggle-text, .light-mode .history-title { color: var(--primary-text); }
+        .light-mode #app-logo { filter: none; }
         .light-mode #model-selector, .light-mode #chat-input, .light-mode .search-box { background-color: #f0f0f0; color: var(--primary-text); border-color: var(--border-color); }
         .light-mode #model-selector:focus, .light-mode #chat-input:focus, .light-mode .search-box:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.2); }
         .light-mode .bot-message .content { background-color: #e9e9eb; color: var(--primary-text); }
         .light-mode th { background-color: #f9f9f9; }
-        .light-mode .danger-btn { border-color: var(--danger-color); color: var(--danger-color); }
-        .light-mode .danger-btn:hover { background-color: rgba(215, 0, 21, 0.1); }
-        .light-mode .pagination-btn { background-color: var(--surface-color); border-color: var(--border-color); color: var(--primary-text); }
-        .light-mode .pagination-btn:hover:not(:disabled) { background-color: var(--accent-color); border-color: var(--accent-color); color: #ffffff; }
-        .light-mode .pagination-btn:disabled { color: #aeaeae; }
-        .light-mode .thinking-block { background-color: rgba(0, 0, 0, 0.05); border-left-color: var(--accent-color); }
-        .light-mode .thinking-content { color: #555; border-top-color: var(--border-color); }
         .light-mode .bot-message .content pre { background-color: #f0f0f0; }
         .light-mode .bot-message .content code { background-color: rgba(0, 0, 0, 0.08); }
 
         /* --- Base Styles --- */
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            font-family: var(--font-family);
             font-size: 16px;
             line-height: 1.6;
             margin: 0;
@@ -64,60 +60,68 @@
             transition: background-color 0.3s, color 0.3s;
         }
 
-        .container { max-width: 1600px; margin: 0 auto; padding: 2rem; }
-        .logo-container { text-align: left; margin-bottom: 2rem; }
+        .container { max-width: 1600px; margin: 0 auto; padding: 2.5rem; }
+        .logo-container { text-align: left; margin-bottom: 2.5rem; }
         #app-logo { max-height: 300px; width: auto; transition: filter 0.3s ease-in-out; }
-        h1 { text-align: center; margin-bottom: 2rem; font-weight: 600; color: #f9f9f9; }
-
+        
         /* --- Layout --- */
-        .main-layout { display: flex; gap: 2rem; align-items: flex-start; }
-        .left-panel { flex: 3; display: flex; flex-direction: column; }
-        .right-panel { flex: 1; min-width: 350px; position: sticky; top: 2rem; }
+        .main-layout { display: flex; gap: 2.5rem; align-items: flex-start; }
+        .left-panel { flex: 3; display: flex; flex-direction: column; min-width: 0; }
+        .right-panel { flex: 1; min-width: 350px; position: sticky; top: 2.5rem; }
 
         /* --- Panel & Card Styles --- */
-        .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 0 0.5rem; margin-bottom: 1rem; }
-        .panel-header h2 { margin: 0; font-size: 1.2em; color: var(--primary-text); }
-        .card { background-color: var(--surface-color); border-radius: 8px; margin-bottom: 1.5rem; border: 1px solid var(--border-color); overflow: hidden; transition: background-color 0.3s, border-color 0.3s; }
-        .card-header { padding: 1rem 1.25rem; background-color: rgba(255, 255, 255, 0.03); border-bottom: 1px solid var(--border-color); font-size: 1em; font-weight: 600; margin: 0; }
-        .card-body { padding: 1.25rem; }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 0 0.5rem; margin-bottom: 1.5rem; }
+        .card { background-color: var(--surface-color); border-radius: 12px; margin-bottom: 2rem; border: 1px solid var(--border-color); overflow: hidden; box-shadow: var(--card-shadow); transition: all 0.3s ease; }
+        .card-header { padding: 1rem 1.5rem; background-color: rgba(255, 255, 255, 0.03); border-bottom: 1px solid var(--border-color); font-size: 1.1em; font-weight: 600; margin: 0; }
+        .card-body { padding: 1.5rem; }
         .card-body.no-padding { padding: 0; }
 
         /* --- Chat Area --- */
-        #chat-container { display: flex; flex-direction: column; height: 80vh; background-color: var(--surface-color); border-radius: 8px; overflow: hidden; border: 1px solid var(--border-color); }
-        #chat-box { flex-grow: 1; padding: 1rem; overflow-y: auto; }
-        #chat-form { display: flex; padding: 1rem; border-top: 1px solid var(--border-color); gap: 0.5rem; }
-        #chat-input { flex-grow: 1; padding: 0.75rem; border: 1px solid #444; border-radius: 5px; background-color: #2c2c2c; color: white; font-size: 1rem; resize: none; max-height: 150px; overflow-y: auto; }
-        #chat-input:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px rgba(130, 87, 229, 0.2); }
-        #chat-submit { padding: 0.5rem; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 5px; background-color: var(--accent-color); color: white; cursor: pointer; flex-shrink: 0; }
-        #chat-submit:hover { background-color: var(--accent-hover); }
-        #chat-submit:disabled { background-color: #555; cursor: not-allowed; }
-
-        /* --- Message Bubbles --- */
+        #chat-container { display: flex; flex-direction: column; height: 75vh; background-color: var(--surface-color); border-radius: 12px; overflow: hidden; border: 1px solid var(--border-color); box-shadow: var(--card-shadow); }
+        #chat-box { flex-grow: 1; padding: 1.5rem; overflow-y: auto; }
+        #chat-form { display: flex; padding: 1rem; border-top: 1px solid var(--border-color); gap: 1rem; align-items: center; }
+        #chat-input { flex-grow: 1; padding: 0.75rem 1rem; border: 1px solid var(--border-color); border-radius: 8px; background-color: var(--bg-color); color: var(--primary-text); font-size: 1rem; resize: none; max-height: 150px; overflow-y: auto; transition: all 0.2s ease; }
+        #chat-input:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-hover); outline: none; }
+        
+        /* --- Messages --- */
         .message { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
         .message::before { content: ''; display: block; width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; font-weight: bold; text-align: center; line-height: 36px; font-size: 1em; }
         .bot-message::before { background-color: var(--accent-color); content: 'AI'; }
         .user-message { flex-direction: row-reverse; }
         .user-message::before { background-color: #4a4a4a; content: 'U'; }
-        .message-wrapper { display: flex; flex-direction: column; max-width: 80%; }
+        .message-wrapper { display: flex; flex-direction: column; max-width: 85%; }
         .user-message .message-wrapper { align-items: flex-end; }
         .bot-message .message-wrapper { align-items: flex-start; }
-        .message .content { padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.6; }
-        .user-message .content { background-color: var(--accent-color); color: white; border-bottom-right-radius: 2px; white-space: pre-wrap; word-wrap: break-word; }
-        .bot-message .content { background-color: #363636; color: var(--primary-text); border-bottom-left-radius: 2px; min-height: 1.6em; font-size: 1.05em; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all; max-width: 100%; }
+        .message .content { padding: 0.75rem 1.25rem; border-radius: 18px; line-height: 1.6; }
+        .user-message .content { background-color: var(--accent-color); color: white; white-space: pre-wrap; word-wrap: break-word; }
+        .bot-message .content { background-color: #363636; color: var(--primary-text); font-size: 1.05em; overflow-wrap: break-word; word-break: break-all; }
         
         /* --- Formatted Content (Markdown) --- */
-        .bot-message .content h1, .bot-message .content h2, .bot-message .content h3 { margin-top: 1em; margin-bottom: 0.5em; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
+        .bot-message .content h1, .bot-message .content h2, .bot-message .content h3 { margin-top: 1.2em; margin-bottom: 0.6em; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4em; }
         .bot-message .content ul, .bot-message .content ol { padding-left: 2em; }
-        .bot-message .content pre { background-color: rgba(0, 0, 0, 0.3); padding: 1em; border-radius: 5px; white-space: pre-wrap; overflow-x: auto; }
-        .bot-message .content code { background-color: rgba(255, 255, 255, 0.1); padding: 2px 4px; border-radius: 3px; font-family: monospace; word-break: break-all; }
+        .bot-message .content pre { background-color: rgba(0, 0, 0, 0.3); padding: 1em; border-radius: 8px; white-space: pre-wrap; overflow-x: auto; }
+        .bot-message .content code { background-color: rgba(255, 255, 255, 0.1); padding: 2px 4px; border-radius: 4px; font-family: monospace; word-break: break-all; }
+        .bot-message .content table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+        .bot-message .content th, .bot-message .content td { border: 1px solid var(--border-color); padding: 8px; }
+        .bot-message .content th { background-color: rgba(255, 255, 255, 0.1); }
         
-        /* --- Message Actions & Download Button --- */
+        /* --- Apple Style Buttons --- */
+        .apple-btn { display: inline-flex; align-items: center; justify-content: center; font-size: 1rem; font-weight: 500; border-radius: 8px; border: none; cursor: pointer; transition: all 0.2s ease; padding: 8px 16px; text-decoration: none; white-space: nowrap; }
+        .apple-btn:disabled { cursor: not-allowed; opacity: 0.6; }
+        .apple-btn.primary { background-color: var(--accent-color); color: white; }
+        .apple-btn.primary:hover:not(:disabled) { background-color: var(--accent-hover); transform: translateY(-1px); }
+        .apple-btn.secondary { background-color: var(--surface-color); color: var(--primary-text); border: 1px solid var(--border-color); }
+        .apple-btn.secondary:hover:not(:disabled) { background-color: rgba(255, 255, 255, 0.05); border-color: var(--accent-color); }
+        .apple-btn.danger { background-color: var(--danger-color); color: white; }
+        .apple-btn.danger:hover:not(:disabled) { background-color: var(--danger-hover); }
+        .apple-btn.icon-btn { padding: 0; width: 44px; height: 44px; }
+        #chat-submit.apple-btn.icon-btn { border-radius: 8px; }
+        .light-mode .apple-btn.secondary { background-color: #e9e9eb; border-color: #c5c5c7; }
+        .light-mode .apple-btn.secondary:hover:not(:disabled) { background-color: #dcdce0; }
+
         .message-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; padding: 0 0.5rem; }
-        .download-btn { background-color: transparent; border: 1px solid var(--info-color); color: var(--info-color); padding: 5px 12px; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 0.85em; transition: all 0.2s ease; }
-        .download-btn:hover { background-color: var(--info-color); color: white; }
-        .download-btn svg { width: 14px; height: 14px; }
         
-        /* --- Progress Bar --- */
+        /* --- Progress Bar & Animation --- */
         .progress-container { display: none; width: 100%; padding: 1rem 0; margin-bottom: 1rem; }
         .progress-steps { display: flex; justify-content: space-between; align-items: center; list-style: none; padding: 0; margin: 0; position: relative; }
         .progress-steps::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 4px; background-color: var(--border-color); transform: translateY(-50%); z-index: 1; }
@@ -125,80 +129,97 @@
         .progress-step { position: relative; z-index: 3; text-align: center; }
         .step-circle { width: 30px; height: 30px; border-radius: 50%; background-color: var(--border-color); border: 3px solid var(--surface-color); color: var(--secondary-text); display: flex; align-items: center; justify-content: center; font-weight: bold; transition: all 0.4s ease; margin: 0 auto; }
         .step-label { margin-top: 0.5rem; font-size: 0.8em; color: var(--secondary-text); transition: all 0.4s ease; }
-        .progress-step.active .step-circle { background-color: var(--accent-color); color: white; border-color: var(--accent-color); }
+        .progress-step.active .step-circle { background-color: var(--accent-color); color: white; }
         .progress-step.active .step-label { color: var(--accent-color); font-weight: bold; }
-        .progress-step.completed .step-circle { background-color: var(--success-color); color: white; border-color: var(--success-color); }
+        .progress-step.completed .step-circle { background-color: var(--success-color); color: white; }
         .progress-step.completed .step-circle::before { content: '✓'; }
         .progress-status-text { text-align: center; margin-top: 0.5rem; font-size: 0.9em; color: var(--secondary-text); height: 1.2em; }
-        
-        /* --- Loading Dots Animation --- */
         .loading-dots { display: none; margin-left: 8px; }
         .progress-step.active .loading-dots { display: inline-flex; }
         .loading-dots span { display: inline-block; width: 5px; height: 5px; margin: 0 1px; background-color: var(--accent-color); border-radius: 50%; animation: bounce-dots 1.4s infinite ease-in-out both; }
         .loading-dots span:nth-of-type(1) { animation-delay: -0.32s; }
         .loading-dots span:nth-of-type(2) { animation-delay: -0.16s; }
-        .loading-dots span:nth-of-type(3) { animation-delay: 0s; }
         @keyframes bounce-dots { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1.0); } }
-
-        /* --- Other Controls --- */
-        .danger-btn { background-color: transparent; border: 1px solid var(--danger-color); color: var(--danger-color); padding: 8px 12px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; font-size: 0.9em; }
-        .danger-btn:hover { background-color: rgba(229, 57, 53, 0.1); }
-        .theme-toggle { position: fixed; top: 20px; right: 20px; background-color: var(--accent-color); color: white; border: none; border-radius: 50%; width: 50px; height: 50px; cursor: pointer; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); transition: all 0.3s; z-index: 1000; }
-        .theme-toggle:hover { transform: scale(1.1); }
-        .clarification-btn { background-color: var(--surface-color); border: 1px solid var(--accent-color); color: var(--accent-color); padding: 0.5rem 1rem; border-radius: 20px; cursor: pointer; transition: all 0.2s; text-align: left; }
-        .clarification-btn:hover { background-color: var(--accent-color); color: white; }
-		
-		/* --- History Panel Styles --- */
-        #history-list-container { max-height: 70vh; overflow-y: auto; }
-        .history-item {
-            padding: 1rem;
-            border-bottom: 1px solid var(--border-color);
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        .history-item:last-child { border-bottom: none; }
+        
+        /* --- Right Panel & History --- */
+        .panel-tabs { display: flex; border-bottom: 2px solid var(--border-color); margin-bottom: 1.5rem; }
+        .panel-tab-button { padding: 0.8rem 1rem; cursor: pointer; background: none; border: none; color: var(--secondary-text); font-size: 1rem; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s ease; }
+        .panel-tab-button.active, .panel-tab-button:hover { color: var(--accent-color); border-bottom-color: var(--accent-color); font-weight: 600; }
+        .panel-tab-content { display: none; }
+        .panel-tab-content.active { display: block; }
+        #history-list-container { max-height: 70vh; overflow-y: auto; padding: 0.5rem; }
+        .history-item { padding: 1rem; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background-color 0.2s; border-radius: 8px; margin: 0.5rem; }
         .history-item:hover { background-color: rgba(255, 255, 255, 0.05); }
-        .history-title {
-            font-weight: 500;
-            color: var(--primary-text);
-            margin: 0 0 0.5rem 0;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+        .history-title { font-weight: 500; color: var(--primary-text); margin: 0 0 0.5rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .history-meta { display: flex; justify-content: space-between; align-items: center; }
+        .history-timestamp { font-size: 0.8em; color: var(--secondary-text); }
+        .history-actions button { background: none; border: none; padding: 0.25rem; }
+        .delete-history-btn svg { stroke: var(--danger-color); cursor: pointer; }
+        .no-history { text-align: center; padding: 2rem; color: var(--secondary-text); }
+
+        /* --- Blueprint Approval UI --- */
+        .blueprint-container { border: 1px solid var(--border-color); border-radius: 8px; margin-top: 1rem; }
+        .blueprint-header { padding: 0.75rem 1rem; font-weight: 600; background-color: rgba(255, 255, 255, 0.05); border-bottom: 1px solid var(--border-color); }
+        .blueprint-content { padding: 1rem; max-height: 300px; overflow-y: auto; background-color: rgba(0,0,0,0.2); }
+        .blueprint-actions { padding: 0.75rem 1rem; display: flex; gap: 1rem; border-top: 1px solid var(--border-color); }
+
+        /* --- Collapsible References Styles --- */
+        .bot-message .content details.references { border: 1px solid var(--border-color); border-radius: 6px; margin-top: 1.5em; overflow: hidden; }
+        .bot-message .content summary.references-summary { cursor: pointer; padding: 0.75rem 1rem; font-weight: 600; background-color: rgba(255, 255, 255, 0.05); transition: background-color 0.2s; outline: none; list-style: none; }
+        .bot-message .content summary.references-summary::-webkit-details-marker { display: none; }
+        .bot-message .content summary.references-summary::before { content: '▶'; margin-right: 0.5em; display: inline-block; transition: transform 0.2s; }
+        .bot-message .content details[open] > summary.references-summary::before { transform: rotate(90deg); }
+        .bot-message .content summary.references-summary:hover { background-color: rgba(255, 255, 255, 0.1); }
+        .bot-message .content details[open] > summary.references-summary { border-bottom: 1px solid var(--border-color); }
+        .bot-message .content .reference-content { padding: 0.25rem 1rem 1rem 1rem; }
+
+        /* --- Animated Toggle Switch --- */
+        .toggle-switch-container { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.5rem; }
+        .toggle-text { font-weight: 500; margin-right: 1rem; }
+        .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #444; transition: .4s; border-radius: 28px; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--success-color); }
+        input:focus + .slider { box-shadow: 0 0 1px var(--success-color); }
+        input:checked + .slider:before { transform: translateX(22px); }
+        .light-mode .slider { background-color: #ccc; }
+
+        /* --- Responsive Design --- */
+        @media (max-width: 992px) {
+            .main-layout {
+                flex-direction: column;
+                gap: 2rem;
+            }
+            .right-panel {
+                position: static;
+                min-width: 100%;
+                top: auto;
+            }
+            .container {
+                padding: 1.5rem;
+            }
+            #chat-container {
+                height: 60vh;
+            }
         }
-        .history-meta {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+
+        @media (max-width: 576px) {
+            .container {
+                padding: 1rem;
+            }
+            h2 { font-size: 1.5rem; }
+            .panel-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
+            #chat-box { padding: 1rem; }
         }
-        .history-timestamp {
-            font-size: 0.8em;
-            color: var(--secondary-text);
-        }
-        .history-actions button {
-            background: none;
-            border: none;
-            cursor: pointer;
-            padding: 0.25rem;
-        }
-        .delete-history-btn svg {
-            stroke: var(--danger-color);
-            transition: stroke 0.2s;
-        }
-        .delete-history-btn:hover svg { stroke: var(--danger-hover); }
-        .no-history {
-            text-align: center;
-            padding: 2rem;
-            color: var(--secondary-text);
-        }
+
     </style>
 </head>
 
 <body>
-    <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()">
+    <button id="theme-toggle" class="apple-btn secondary" onclick="toggleTheme()" style="position: absolute; top: 1rem; right: 1rem; z-index: 100;">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
     </button>
-
     <div class="container">
         <div class="logo-container">
             <a href="/"><img src="/static/logo.png" alt="Logo" id="app-logo"></a>
@@ -207,41 +228,27 @@
             <div class="left-panel">
                 <div class="panel-header">
                     <h2>對話視窗</h2>
-                    <button id="clear-chat-btn" class="danger-btn">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                        <span>清除對話</span>
+                    <button id="clear-chat-btn" class="apple-btn danger">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        <span style="margin-left: 8px;">清除對話</span>
                     </button>
                 </div>
-
                 <div style="display: flex; align-items: center; gap: 1rem;">
                     <div class="progress-container" id="progress-container" style="flex-grow: 1;">
                         <ul class="progress-steps" id="progress-steps">
                             <div class="progress-bar-line" id="progress-bar-line"></div>
-                            <li class="progress-step" data-step="1">
-                                <div class="step-circle">1</div>
-                                <div class="step-label">拆解任務 <span class="loading-dots"><span></span><span></span><span></span></span></div>
-                            </li>
-                            <li class="progress-step" data-step="2">
-                                <div class="step-circle">2</div>
-                                <div class="step-label">深度研究 <span class="loading-dots"><span></span><span></span><span></span></span></div>
-                            </li>
-                            <li class="progress-step" data-step="3">
-                                <div class="step-circle">3</div>
-                                <div class="step-label">生成大綱 <span class="loading-dots"><span></span><span></span><span></span></span></div>
-                            </li>
-                            <li class="progress-step" data-step="4">
-                                <div class="step-circle">4</div>
-                                <div class="step-label">撰寫報告 <span class="loading-dots"><span></span><span></span><span></span></span></div>
-                            </li>
+                            <li class="progress-step" data-step="1"><div class="step-circle">1</div><div class="step-label">拆解任務 <span class="loading-dots"><span></span><span></span><span></span></span></div></li>
+                            <li class="progress-step" data-step="2"><div class="step-circle">2</div><div class="step-label">深度研究 <span class="loading-dots"><span></span><span></span><span></span></span></div></li>
+                            <li class="progress-step" data-step="3"><div class="step-circle">3</div><div class="step-label">生成大綱 <span class="loading-dots"><span></span><span></span><span></span></span></div></li>
+                            <li class="progress-step" data-step="4"><div class="step-circle">4</div><div class="step-label">撰寫報告 <span class="loading-dots"><span></span><span></span><span></span></span></div></li>
                         </ul>
                         <div class="progress-status-text" id="progress-status-text"></div>
                     </div>
-                    <button id="cancel-task-btn" class="danger-btn" style="display: none; margin-bottom: 1rem;">
+                    <button id="cancel-task-btn" class="apple-btn danger" style="display: none; margin-bottom: 1rem;">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
-                        <span>停止</span>
+                        <span style="margin-left: 8px;">停止</span>
                     </button>
                 </div>
-
                 <div id="chat-container">
                     <div id="chat-box">
                         <div class="message bot-message">
@@ -253,20 +260,18 @@
                     </div>
                     <div id="chat-form">
                         <textarea id="chat-input" placeholder="請在此處輸入您的研究主題... (Shift+Enter 換行)" rows="1" onkeydown="handleEnter(event)"></textarea>
-                        <button type="button" id="chat-submit" onclick="sendMessage()">
+                        <button type="button" id="chat-submit" class="apple-btn primary icon-btn" onclick="sendMessage()">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                         </button>
                     </div>
                 </div>
             </div>
-
             <div class="right-panel">
-                <!--<div class="panel-tabs"><button class="panel-tab-button active" onclick="openPanelTab(event, 'settings')">設定</button></div>-->
                 <div class="panel-tabs">
                     <button class="panel-tab-button active" onclick="openPanelTab(event, 'settings')">設定</button>
                     <button class="panel-tab-button" onclick="openPanelTab(event, 'history')">歷史紀錄</button>
                 </div>
-				<div id="settings" class="panel-tab-content active">
+                <div id="settings" class="panel-tab-content active">
                     <div class="card">
                         <h3 class="card-header">模型與功能</h3>
                         <div class="card-body">
@@ -274,19 +279,22 @@
                             <select id="model-selector"><option value="">正在載入...</option></select>
                             <span id="model-status"></span>
                         </div>
-				<div id="history" class="panel-tab-content">
+                        <div class="card-body">
+                            <div class="toggle-switch-container">
+                                <span class="toggle-text">啟用網路研究</span>
+                                <label class="switch">
+                                    <input type="checkbox" id="web-search-toggle" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="history" class="panel-tab-content">
                     <div class="card">
                         <h3 class="card-header">專案歷史</h3>
                         <div class="card-body no-padding" id="history-list-container">
                             <div class="no-history">正在載入歷史紀錄...</div>
-                        </div>
-                    </div>
-                </div>
-                        <div class="card-body no-padding">
-                            <div class="toggle-switch-container">
-                                <input type="checkbox" id="web-search-toggle" class="toggle-input" checked>
-                                <label for="web-search-toggle" class="toggle-label"><span class="slider"></span><span class="toggle-text">啟用網路研究</span></label>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -299,320 +307,192 @@
         let chatBox, chatInput, submitButton, modelSelector, modelStatus, clearChatBtn, webSearchToggle;
         let fullMarkdownResponse = '', currentTaskId = null, originalBroadQuestion = null;
 
-        // --- Init Function ---
+        // --- Init ---
         document.addEventListener('DOMContentLoaded', () => {
-            chatBox = document.getElementById('chat-box');
-            chatInput = document.getElementById('chat-input');
-            submitButton = document.getElementById('chat-submit');
-            modelSelector = document.getElementById('model-selector');
-            modelStatus = document.getElementById('model-status');
-            clearChatBtn = document.getElementById('clear-chat-btn');
-            webSearchToggle = document.getElementById('web-search-toggle');
-            
+            chatBox = document.getElementById('chat-box'); chatInput = document.getElementById('chat-input'); submitButton = document.getElementById('chat-submit'); modelSelector = document.getElementById('model-selector'); modelStatus = document.getElementById('model-status'); clearChatBtn = document.getElementById('clear-chat-btn'); webSearchToggle = document.getElementById('web-search-toggle');
             webSearchToggle.addEventListener('change', (e) => handleToggleChange(e.target, '/api/set_web_search'));
             modelSelector.addEventListener('change', handleModelChange);
             clearChatBtn.addEventListener('click', handleClearChat);
-            chatInput.addEventListener('input', () => {
-                chatInput.style.height = 'auto';
-                chatInput.style.height = (chatInput.scrollHeight) + 'px';
-            });
-            loadModelsAndSettings();
-			loadHistoryList();
+            chatInput.addEventListener('input', () => { chatInput.style.height = 'auto'; chatInput.style.height = (chatInput.scrollHeight) + 'px'; });
+            loadModelsAndSettings(); loadHistoryList();
         });
-		
-        function openPanelTab(evt, tabName) {
-            // 處理頁籤切換的邏輯
-            const tabcontent = document.getElementsByClassName("panel-tab-content");
-            for (let i = 0; i < tabcontent.length; i++) {
-                tabcontent[i].style.display = "none";
-            }
-            const tablinks = document.getElementsByClassName("panel-tab-button");
-            for (let i = 0; i < tablinks.length; i++) {
-                tablinks[i].className = tablinks[i].className.replace(" active", "");
-            }
-            document.getElementById(tabName).style.display = "block";
-            evt.currentTarget.className += " active";
-
-            // 如果點擊的是歷史紀錄頁籤，重新載入列表
-            if (tabName === 'history') {
-                loadHistoryList();
-            }
+        
+        // --- Collapsible References ---
+        function makeReferencesCollapsible(botContentDiv) {
+            if (botContentDiv.querySelector('details.references')) return;
+            const h2s = botContentDiv.querySelectorAll('h2');
+            h2s.forEach(h2 => {
+                if (h2.textContent.includes('參考文獻')) {
+                    const details = document.createElement('details'); details.className = 'references';
+                    const summary = document.createElement('summary'); summary.className = 'references-summary';
+                    summary.textContent = h2.textContent;
+                    const contentWrapper = document.createElement('div'); contentWrapper.className = 'reference-content';
+                    let sibling = h2.nextElementSibling;
+                    while (sibling) { contentWrapper.appendChild(sibling); sibling = h2.nextElementSibling; }
+                    details.appendChild(summary); details.appendChild(contentWrapper);
+                    h2.parentNode.replaceChild(details, h2);
+                }
+            });
         }
-		
-		async function loadHistoryList() {
+        
+        // --- UI & History Functions ---
+        function openPanelTab(evt, tabName) {
+            document.querySelectorAll(".panel-tab-content").forEach(tc => tc.style.display = "none");
+            document.querySelectorAll(".panel-tab-button").forEach(tb => tb.classList.remove("active"));
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.classList.add("active");
+            if (tabName === 'history') { loadHistoryList(); }
+        }
+        async function loadHistoryList() {
             const container = document.getElementById('history-list-container');
             container.innerHTML = '<div class="no-history">正在載入...</div>';
             try {
                 const response = await fetch('/api/history');
                 const historyData = await response.json();
                 renderHistoryList(historyData);
-            } catch (error) {
-                console.error("載入歷史紀錄失敗:", error);
-                container.innerHTML = '<div class="no-history">載入失敗</div>';
-            }
+            } catch (error) { console.error("載入歷史紀錄失敗:", error); container.innerHTML = '<div class="no-history">載入失敗</div>'; }
         }
-		
-		function renderHistoryList(historyData) {
+        function renderHistoryList(historyData) {
             const container = document.getElementById('history-list-container');
-            if (!historyData || historyData.length === 0) {
-                container.innerHTML = '<div class="no-history">目前沒有歷史紀錄</div>';
-                return;
-            }
+            if (!historyData || historyData.length === 0) { container.innerHTML = '<div class="no-history">目前沒有歷史紀錄</div>'; return; }
             container.innerHTML = '';
             historyData.forEach(entry => {
-                const item = document.createElement('div');
-                item.className = 'history-item';
+                const item = document.createElement('div'); item.className = 'history-item';
                 item.innerHTML = `
-                    <p class="history-title" title="${escapeHtml(entry.title)}">${escapeHtml(entry.title)}</p>
-                    <div class="history-meta">
-                        <span class="history-timestamp">${new Date(entry.timestamp).toLocaleString()}</span>
-                        <div class="history-actions">
-                            <button class="delete-history-btn" data-id="${entry.id}" title="刪除">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                            </button>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--secondary-text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                        <div style="flex-grow: 1; overflow: hidden;">
+                            <p class="history-title" title="${escapeHtml(entry.title)}">${escapeHtml(entry.title)}</p>
+                            <div class="history-meta">
+                                <span class="history-timestamp">${new Date(entry.timestamp).toLocaleString()}</span>
+                                <div class="history-actions">
+                                    <button class="delete-history-btn" title="刪除"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                `;
-                // 點擊項目本身來查看報告
-                item.querySelector('.history-title').addEventListener('click', () => viewHistoryEntry(entry.id));
-                item.querySelector('.history-timestamp').addEventListener('click', () => viewHistoryEntry(entry.id));
-                
-                // 點擊刪除按鈕
-                item.querySelector('.delete-history-btn').addEventListener('click', (e) => {
-                    e.stopPropagation(); // 防止觸發查看事件
-                    deleteHistoryEntry(entry.id, entry.title);
-                });
-
+                    </div>`;
+                const clickableArea = item.querySelector('.history-title');
+                clickableArea.addEventListener('click', () => viewHistoryEntry(entry.id));
+                item.querySelector('.delete-history-btn').addEventListener('click', (e) => { e.stopPropagation(); deleteHistoryEntry(entry.id, entry.title); });
                 container.appendChild(item);
             });
         }
-		
-		async function viewHistoryEntry(entryId) {
+        async function viewHistoryEntry(entryId) {
             try {
                 const response = await fetch(`/api/history/${entryId}`);
                 const entry = await response.json();
-                
-                // 在左側對話框中顯示歷史報告
-                const userMessageWrapper = appendMessage(entry.title, 'user');
+                appendMessage(entry.title, 'user');
                 const { contentDiv, actionsDiv } = appendMessage('', 'bot');
-                
                 contentDiv.innerHTML = marked.parse(entry.report);
-                
-                // 為歷史報告也加上下載按鈕
+                makeReferencesCollapsible(contentDiv);
                 const downloadButton = document.createElement('button');
-                downloadButton.className = 'download-btn';
-                downloadButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span>下載報告 (.md)</span>`;
+                downloadButton.className = 'apple-btn secondary';
+                downloadButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span style="margin-left: 8px;">下載報告 (.md)</span>`;
                 downloadButton.onclick = () => downloadReport(entry.report, 'md');
                 actionsDiv.appendChild(downloadButton);
-
                 chatBox.scrollTop = chatBox.scrollHeight;
-
-            } catch (error) {
-                console.error(`查看歷史紀錄 ${entryId} 失敗:`, error);
-                alert("無法載入該歷史報告。");
-            }
+            } catch (error) { console.error(`查看歷史紀錄 ${entryId} 失敗:`, error); alert("無法載入該歷史報告。"); }
         }
-		
-		async function deleteHistoryEntry(entryId, entryTitle) {
+        async function deleteHistoryEntry(entryId, entryTitle) {
             if (confirm(`您確定要刪除「${entryTitle}」這份報告嗎？`)) {
-                try {
-                    await fetch(`/api/history/${entryId}`, { method: 'DELETE' });
-                    loadHistoryList(); // 成功後刷新列表
-                } catch (error) {
-                    console.error(`刪除歷史紀錄 ${entryId} 失敗:`, error);
-                    alert("刪除失敗。");
-                }
+                try { await fetch(`/api/history/${entryId}`, { method: 'DELETE' }); loadHistoryList(); }
+                catch (error) { console.error(`刪除歷史紀錄 ${entryId} 失敗:`, error); alert("刪除失敗。"); }
             }
         }
-		
-		async function saveReportToHistory(title, report) {
+        async function saveReportToHistory(title, report) {
             try {
-                const response = await fetch('/api/history', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title: title, report: report })
-                });
-                if (response.ok) {
-                    console.log("報告已成功儲存至歷史紀錄。");
-                    // 如果使用者正在看歷史頁籤，就刷新它
-                    if (document.getElementById('history').style.display === 'block') {
-                        loadHistoryList();
-                    }
-                }
-            } catch (error) {
-                console.error("儲存歷史紀錄失敗:", error);
-            }
+                const response = await fetch('/api/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title, report: report }) });
+                if (response.ok && document.getElementById('history').style.display === 'block') { loadHistoryList(); }
+            } catch (error) { console.error("儲存歷史紀錄失敗:", error); }
         }
-        
-        // --- UI Update Functions ---
-        function updateProgress(step, message = '') {
-            const steps = document.querySelectorAll('.progress-step');
-            const progressBarLine = document.getElementById('progress-bar-line');
-            const statusText = document.getElementById('progress-status-text');
-            const totalSteps = steps.length;
+
+        function handleBlueprintApproval(botContentDiv, blueprintData) {
+            const blueprint = blueprintData.blueprint;
+            const duration = blueprintData.duration;
+            botContentDiv.innerHTML = `
+                <div class="blueprint-container">
+                    <div class="blueprint-header">報告大綱已生成 (研究階段耗時: ${escapeHtml(duration)})</div>
+                    <div class="blueprint-content"><pre><code>${escapeHtml(JSON.stringify(blueprint, null, 2))}</code></pre></div>
+                    <div class="blueprint-actions"><button id="confirm-blueprint-btn" class="apple-btn primary">確認並繼續撰寫</button></div>
+                </div>`;
             
-            steps.forEach(s => {
-                const s_step = parseInt(s.dataset.step);
-                s.classList.remove('active', 'completed');
-                const loadingDots = s.querySelector('.loading-dots');
-                if (loadingDots) loadingDots.style.display = 'none';
-
-                if (s_step < step) {
-                    s.classList.add('completed');
-                } else if (s_step === step) {
-                    s.classList.add('active');
-                    if (loadingDots) loadingDots.style.display = 'inline-flex';
-                }
-            });
-
-            const percentage = step > 1 ? ((step - 1) / (totalSteps - 1)) * 100 : 0;
-            progressBarLine.style.width = `${percentage}%`;
-            statusText.textContent = message;
-        }
-
-        function appendMessage(text, sender) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${sender}-message`;
-            const messageWrapper = document.createElement('div');
-            messageWrapper.className = 'message-wrapper';
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'content';
-            if (sender === 'user') {
-                contentDiv.textContent = text;
-            }
-            const actionsDiv = document.createElement('div');
-            actionsDiv.className = 'message-actions';
-            messageWrapper.appendChild(contentDiv);
-            messageWrapper.appendChild(actionsDiv);
-            messageDiv.appendChild(messageWrapper);
-            chatBox.appendChild(messageDiv);
-            chatBox.scrollTop = chatBox.scrollHeight;
-            return { messageWrapper, contentDiv, actionsDiv }; 
-        }
-
-        // --- Core Logic Functions ---
-        async function sendMessage() {
-            const question = chatInput.value.trim();
-            if (!question) return;
-            originalBroadQuestion = question;
-            appendMessage(question, 'user');
-            chatInput.value = '';
-            chatInput.style.height = 'auto';
-            const { contentDiv, actionsDiv } = appendMessage('', 'bot');
-            executeStream(question, contentDiv, actionsDiv, false);
-        }
-
-        function handleClarification(botContentDiv, clarificationData) {
-            botContentDiv.innerHTML = '';
-            const intro = document.createElement('p');
-            intro.textContent = clarificationData.intro_sentence;
-            botContentDiv.appendChild(intro);
-            const optionsContainer = document.createElement('div');
-            optionsContainer.className = 'clarification-options';
-            clarificationData.options.forEach(optionText => {
-                const button = document.createElement('button');
-                button.className = 'clarification-btn';
-                button.textContent = optionText;
-                button.onclick = () => handleClarificationChoice(optionText);
-                optionsContainer.appendChild(button);
-            });
-            botContentDiv.appendChild(optionsContainer);
+            document.getElementById('confirm-blueprint-btn').onclick = () => {
+                document.getElementById('confirm-blueprint-btn').disabled = true;
+                document.getElementById('confirm-blueprint-btn').textContent = '處理中...';
+                continueWritingReport(botContentDiv);
+            };
             chatBox.scrollTop = chatBox.scrollHeight;
         }
 
-        function handleClarificationChoice(choiceText) {
-            appendMessage(choiceText, 'user');
-            const newClarifiedQuestion = `關於「${originalBroadQuestion}」，請為我 "${choiceText}"`;
-            const { contentDiv, actionsDiv } = appendMessage('', 'bot');
-            executeStream(newClarifiedQuestion, contentDiv, actionsDiv, true);
-        }
-
-        async function executeStream(question, botContentDiv, actionsDiv, bypassAssessment) {
-            submitButton.disabled = true;
-            currentTaskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            
-            actionsDiv.innerHTML = ''; 
-            botContentDiv.innerHTML = '';
-            
-            const cancelBtn = document.getElementById('cancel-task-btn');
-            const progressContainer = document.getElementById('progress-container');
-            let wasResearchFlow = false; // Flag to track if the progress bar was shown
-
-            // Only show progress bar for complex research
-            if(webSearchToggle.checked && !bypassAssessment && !/https?:\/\//.test(question)) {
-                // Heuristic: If web search is on, and it's not a direct URL, assume complex query
-                // A better approach would be to wait for the first 'status' message, but this is a simple UI-side prediction
-                wasResearchFlow = true;
-                cancelBtn.style.display = 'flex';
-                cancelBtn.onclick = () => cancelTask(currentTaskId);
-                progressContainer.style.display = 'block';
-                updateProgress(1, '正在評估問題...');
-            } else if (bypassAssessment || /https?:\/\//.test(question) || webSearchToggle.checked) {
-                 wasResearchFlow = true;
-                 cancelBtn.style.display = 'flex';
-                 cancelBtn.onclick = () => cancelTask(currentTaskId);
-                 progressContainer.style.display = 'block';
-                 updateProgress(1, '正在處理...');
-            }
-
-
+        async function continueWritingReport(botContentDiv) {
+            botContentDiv.innerHTML = ''; 
             fullMarkdownResponse = '';
+            
+            const progressContainer = document.getElementById('progress-container');
+            progressContainer.style.display = 'block';
+            updateProgress(4, '步驟 4/4: 正在撰寫最終報告...');
+            
+            const actionsDiv = botContentDiv.closest('.message-wrapper').querySelector('.message-actions');
             let animationFrameId = null;
+
             const render = () => {
                 botContentDiv.innerHTML = marked.parse(fullMarkdownResponse);
-                if (botContentDiv.innerHTML) { chatBox.scrollTop = chatBox.scrollHeight; }
+                if (botContentDiv.innerHTML) { 
+                    chatBox.scrollTop = chatBox.scrollHeight; 
+                }
                 animationFrameId = null;
             };
 
             const finalizeUIAndRender = (isSuccess = true) => {
-                if (fullMarkdownResponse) { render(); }
-
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                }
+                render();
+                makeReferencesCollapsible(botContentDiv);
                 progressContainer.style.display = 'none';
-                cancelBtn.style.display = 'none';
+                document.getElementById('cancel-task-btn').style.display = 'none';
                 submitButton.disabled = false;
                 
-                if (isSuccess && wasResearchFlow && fullMarkdownResponse.trim().length > 0) {
+                if (isSuccess && fullMarkdownResponse.trim().length > 0) {
                     const downloadButton = document.createElement('button');
-                    downloadButton.className = 'download-btn';
-                    downloadButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span>下載報告 (.md)</span>`;
+                    downloadButton.className = 'apple-btn secondary';
+                    downloadButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span style="margin-left: 8px;">下載報告 (.md)</span>`;
                     downloadButton.onclick = () => downloadReport(fullMarkdownResponse, 'md');
                     actionsDiv.innerHTML = ''; 
                     actionsDiv.appendChild(downloadButton);
-					saveReportToHistory(originalBroadQuestion, fullMarkdownResponse);
                 }
                 currentTaskId = null;
             };
 
             const appendError = (message) => {
-                botContentDiv.innerHTML = `<p style="color: var(--danger-color);">[錯誤]：${message}</p>`;
+                botContentDiv.innerHTML = `<p style="color:var(--danger-color);">[錯誤]：${message}</p>`;
                 finalizeUIAndRender(false);
             };
 
             try {
-                const url = `/ask?question=${encodeURIComponent(question)}&task_id=${encodeURIComponent(currentTaskId)}&bypass_assessment=${bypassAssessment}`;
+                const url = `/api/write_report?task_id=${currentTaskId}`;
+
                 const eventSource = new EventSource(url);
 
                 eventSource.onmessage = function(event) {
                     let eventData;
-                    try { eventData = JSON.parse(event.data); } catch (e) { return; }
+                    try { 
+                        eventData = JSON.parse(event.data); 
+                    } catch (e) { 
+                        console.error("Failed to parse event data: ", event.data);
+                        return; 
+                    }
 
                     switch(eventData.type) {
-                        case 'clarification':
-                            handleClarification(botContentDiv, eventData.data);
-                            finalizeUIAndRender(false);
-                            eventSource.close();
-                            break;
                         case 'status':
-                            wasResearchFlow = true; // As soon as we get a status, we know it's the research flow
-                            progressContainer.style.display = 'block'; // Ensure it's visible
-                            cancelBtn.style.display = 'flex';
-                            const match = eventData.message.match(/步驟\s*(\d)/);
-                            if (match) { updateProgress(parseInt(match[1]), eventData.message); } 
-                            else { document.getElementById('progress-status-text').textContent = eventData.message; }
+                            updateProgress(4, eventData.message);
                             break;
                         case 'content':
                             fullMarkdownResponse += eventData.content;
-                            if (!animationFrameId) { animationFrameId = requestAnimationFrame(render); }
+                            if (!animationFrameId) {
+                                animationFrameId = requestAnimationFrame(render);
+                            }
                             break;
                         case 'error':
                             appendError(eventData.content);
@@ -626,77 +506,214 @@
                 };
 
                 eventSource.onerror = function(err) {
-                    const isAlreadyHandled = botContentDiv.innerText.includes('[錯誤]') || (fullMarkdownResponse.trim().length > 0 && wasResearchFlow);
-                    if (!isAlreadyHandled && !botContentDiv.innerHTML) { appendError("與伺服器的連線意外中斷。"); }
-                    else { finalizeUIAndRender(!botContentDiv.innerText.includes('[錯誤]')); }
+                    console.error("EventSource failed:", err);
+                    if (!fullMarkdownResponse) {
+                         appendError("與伺服器的連線意外中斷。");
+                    }
+                    finalizeUIAndRender(false); 
+                    eventSource.close();
+                };
+
+            } catch (error) {
+                appendError("撰寫報告失敗：" + error.toString());
+            }
+        }
+        
+        // --- Core Logic ---
+        function updateProgress(step, message = '') {
+            const steps = document.querySelectorAll('.progress-step');
+            const progressBarLine = document.getElementById('progress-bar-line');
+            steps.forEach(s => { s.classList.remove('active', 'completed'); const loadingDots = s.querySelector('.loading-dots'); if(loadingDots) loadingDots.style.display = 'none'; if (parseInt(s.dataset.step) < step) { s.classList.add('completed'); } else if (parseInt(s.dataset.step) === step) { s.classList.add('active'); if(loadingDots) loadingDots.style.display = 'inline-flex'; } });
+            progressBarLine.style.width = `${step > 1 ? ((step - 1) / (steps.length - 1)) * 100 : 0}%`;
+            document.getElementById('progress-status-text').textContent = message;
+        }
+        function appendMessage(text, sender) {
+            const messageDiv = document.createElement('div'); messageDiv.className = `message ${sender}-message`;
+            const messageWrapper = document.createElement('div'); messageWrapper.className = 'message-wrapper';
+            const contentDiv = document.createElement('div'); contentDiv.className = 'content';
+            if (sender === 'user') { contentDiv.textContent = text; }
+            const actionsDiv = document.createElement('div'); actionsDiv.className = 'message-actions';
+            messageWrapper.appendChild(contentDiv); messageWrapper.appendChild(actionsDiv);
+            messageDiv.appendChild(messageWrapper); chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return { contentDiv, actionsDiv }; 
+        }
+        async function sendMessage() {
+            const question = chatInput.value.trim(); if (!question) return;
+            submitButton.disabled = true;
+            originalBroadQuestion = question;
+            appendMessage(question, 'user');
+            chatInput.value = ''; chatInput.style.height = 'auto';
+            const { contentDiv, actionsDiv } = appendMessage('', 'bot');
+            
+            executeBlueprintGeneration(question, contentDiv, actionsDiv, false);
+        }
+
+        async function executeBlueprintGeneration(question, botContentDiv, actionsDiv, bypassAssessment) {
+            submitButton.disabled = true;
+            currentTaskId = `task_${Date.now()}`;
+            
+            const cancelBtn = document.getElementById('cancel-task-btn');
+            const progressContainer = document.getElementById('progress-container');
+            
+            cancelBtn.style.display = 'flex';
+            cancelBtn.onclick = () => {
+                cancelBtn.disabled = true;
+                cancelTask(currentTaskId);
+            };
+            progressContainer.style.display = 'block';
+            updateProgress(1, bypassAssessment ? '正在處理...' : '正在評估問題...');
+            
+            const appendError = (message) => {
+                botContentDiv.innerHTML = `<p style="color:var(--danger-color);">[錯誤]：${message}</p>`;
+                progressContainer.style.display = 'none';
+                cancelBtn.style.display = 'none';
+                submitButton.disabled = false;
+            };
+
+            try {
+                const url = `/ask?question=${encodeURIComponent(question)}&task_id=${currentTaskId}&bypass_assessment=${bypassAssessment}`;
+                const eventSource = new EventSource(url);
+
+                eventSource.onmessage = function(event) {
+                    let eventData; try { eventData = JSON.parse(event.data); } catch (e) { return; }
+
+                    switch(eventData.type) {
+                        case 'clarification':
+                            handleClarification(botContentDiv, eventData.data);
+                            progressContainer.style.display = 'none';
+                            cancelBtn.style.display = 'none';
+                            submitButton.disabled = false;
+                            eventSource.close();
+                            break;
+                        case 'blueprint_generated':
+                            handleBlueprintApproval(botContentDiv, eventData.data);
+                            eventSource.close();
+                            break;
+                        case 'status':
+                            const match = eventData.message.match(/步驟\s*(\d)/);
+                            if (match) { updateProgress(parseInt(match[1]), eventData.message); }
+                            break;
+                        case 'content':
+                            fullMarkdownResponse += eventData.content;
+                            botContentDiv.innerHTML = marked.parse(fullMarkdownResponse);
+                            break;
+                        case 'error':
+                            appendError(eventData.content);
+                            eventSource.close();
+                            break;
+                        case 'done':
+                            if (!botContentDiv.querySelector('.blueprint-container')) {
+                                progressContainer.style.display = 'none';
+                                cancelBtn.style.display = 'none';
+                                submitButton.disabled = false;
+                            }
+                            eventSource.close();
+                            break;
+                    }
+                };
+
+                eventSource.onerror = function(err) {
+                    if (!botContentDiv.innerHTML) {
+                        appendError("與伺服器的連線意外中斷。");
+                    }
                     eventSource.close();
                 };
             } catch (error) {
-                appendError("建立連線失敗，請檢查網路或伺服器狀態。");
+                appendError("建立連線失敗。");
             }
         }
+        function handleClarification(botContentDiv, clarificationData) {
+            botContentDiv.innerHTML = `<p>${clarificationData.intro_sentence}</p>`;
+            const optionsContainer = document.createElement('div');
+            optionsContainer.className = 'clarification-options';
+            optionsContainer.style.display = 'flex';
+            optionsContainer.style.flexDirection = 'column';
+            optionsContainer.style.gap = '0.5rem';
+            optionsContainer.style.marginTop = '1rem';
+            clarificationData.options.forEach(optionText => { 
+                const button = document.createElement('button'); 
+                button.className = 'apple-btn secondary'; 
+                button.textContent = optionText; 
+                button.onclick = () => handleClarificationChoice(optionText); 
+                optionsContainer.appendChild(button); 
+            });
+            botContentDiv.appendChild(optionsContainer);
+        }
+        function handleClarificationChoice(choiceText) {
+            appendMessage(choiceText, 'user');
+            const newClarifiedQuestion = `關於「${originalBroadQuestion}」，請為我 "${choiceText}"`;
+            const { contentDiv, actionsDiv } = appendMessage('', 'bot');
+            executeBlueprintGeneration(newClarifiedQuestion, contentDiv, actionsDiv, true);
+        }
         
-        // --- Helper Functions ---
         async function loadModelsAndSettings() {
+            const statusElement = document.getElementById('model-status');
+            const selectorElement = document.getElementById('model-selector');
+            
             try {
+                statusElement.textContent = '1. Fetching...';
                 const response = await fetch('/api/models');
-                if (!response.ok) throw new Error(`無法獲取模型: ${response.statusText}`);
+                
+                statusElement.textContent = '2. Got response, parsing JSON...';
                 const data = await response.json();
-                modelSelector.innerHTML = '';
-                if (!data.models || data.models.length === 0) {
-                    modelSelector.innerHTML = '<option>無可用模型</option>';
-                    modelSelector.disabled = true;
-                    submitButton.disabled = true;
-                } else {
+                
+                statusElement.textContent = '3. Checking response status...';
+                if (!response.ok) {
+                    throw new Error(data.error || 'Server returned an error');
+                }
+                
+                statusElement.textContent = '4. Clearing old options...';
+                selectorElement.innerHTML = '';
+                
+                statusElement.textContent = '5. Populating new options...';
+                if (data.models && data.models.length > 0) {
                     data.models.forEach(model => {
                         const option = new Option(model, model);
-                        if (model === data.current_model) { option.selected = true; modelStatus.textContent = `當前: ${data.current_model.split(':')[0]}`; }
-                        modelSelector.appendChild(option);
+                        if (model === data.current_model) {
+                            option.selected = true;
+                        }
+                        selectorElement.appendChild(option);
                     });
-                    modelSelector.disabled = false; submitButton.disabled = false;
+                    statusElement.textContent = `當前: ${data.current_model.split(':')[0]}`;
+                } else {
+                     statusElement.textContent = "無可用模型";
+                     selectorElement.innerHTML = '<option value="">無可用模型</option>';
                 }
+                
                 webSearchToggle.checked = data.web_search_enabled;
+
             } catch (error) {
                 console.error('載入設定失敗:', error);
-                modelStatus.textContent = "與後端連線失敗";
-                modelStatus.style.color = "var(--danger-color)";
-                submitButton.disabled = true;
+                statusElement.textContent = `載入失敗: ${error.message}`;
+                selectorElement.innerHTML = '<option value="">載入失敗</option>';
+                alert(`模型載入失敗：\n${error.message}`);
             }
         }
-        
         function downloadReport(content, format = 'md') {
-            const mimeType = format === 'md' ? 'text/markdown;charset=utf-8' : 'text/plain;charset=utf-8';
-            const blob = new Blob([content], { type: mimeType });
+            const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            const date = new Date();
-            const timestamp = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-            a.href = url;
-            a.download = `KAIZEN-Report-${timestamp}.${format}`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            const timestamp = new Date().toISOString().slice(0, 10);
+            a.href = url; a.download = `KAIZEN-Report-${timestamp}.${format}`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
-
-        async function handleToggleChange(toggleElement, apiUrl) { try { await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: toggleElement.checked }) }); } catch (error) { console.error(`切換失敗:`, error); toggleElement.checked = !toggleElement.checked; } }
+        async function handleToggleChange(toggleElement, apiUrl) { try { await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: toggleElement.checked }) }); } catch (error) { toggleElement.checked = !toggleElement.checked; } }
         async function handleModelChange(event) {
-            const selectedModel = event.target.value;
-            modelStatus.textContent = `切換中...`;
+            const selectedModel = event.target.value; modelStatus.textContent = `切換中...`;
             try {
                 const response = await fetch('/api/set_model', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: selectedModel }) });
-                const result = await response.json();
-                if (response.ok && result.success) { modelStatus.textContent = `當前: ${selectedModel.split(':')[0]} ✅`; modelStatus.style.color = "var(--success-color)"; } 
-                else { throw new Error(result.error || '未知錯誤'); }
-            } catch (error) { modelStatus.textContent = `切換失敗`; modelStatus.style.color = "var(--danger-color)"; }
-            setTimeout(() => { modelStatus.textContent = `當前: ${modelSelector.value.split(':')[0]}`; modelStatus.style.color = "var(--secondary-text)"; }, 4000);
+                if (!response.ok) throw new Error('切換失敗');
+                modelStatus.textContent = `當前: ${selectedModel.split(':')[0]} ✅`;
+            } catch (error) { modelStatus.textContent = `切換失敗`; }
+            setTimeout(() => { modelStatus.textContent = `當前: ${modelSelector.value.split(':')[0]}`; }, 4000);
         }
-        function handleClearChat() { if (confirm('您確定要清除目前視窗中的對話嗎？')) { chatBox.innerHTML = `<div class="message bot-message"><div class="message-wrapper"><div class="content">你好！我是您的 KAIZEN 深度研究助理。請提出一個複雜的研究主題來開始。</div><div class="message-actions"></div></div></div>`; } }
-        async function cancelTask(taskId) { if (!taskId) return; console.log(`正在請求取消任務: ${taskId}`); try { const response = await fetch('/api/cancel_task', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task_id: taskId }) }); if (!response.ok) { throw new Error('發送取消請求失敗'); } } catch (error) { console.error('取消任務時出錯:', error); } }
+        function handleClearChat() { if (confirm('您確定要清除目前視窗中的對話嗎？')) { chatBox.innerHTML = `<div class="message bot-message"><div class="message-wrapper"><div class="content">你好！我是您的 KAIZEN 深度研究助理。</div><div class="message-actions"></div></div></div>`; } }
+        async function cancelTask(taskId) { if (!taskId) return; try { await fetch('/api/cancel_task', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task_id: taskId }) }); } catch (error) { console.error('取消任務時出錯:', error); } }
         function handleEnter(event) { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); } }
-        function escapeHtml(unsafe) { if (typeof unsafe !== 'string') return ''; return unsafe.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
+        function escapeHtml(unsafe) { return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
         function toggleTheme() { document.body.classList.toggle('light-mode'); }
-        function openPanelTab(evt, tabName) { /* Logic for panel tabs if you add more */ }
     </script>
 </body>
 </html>
