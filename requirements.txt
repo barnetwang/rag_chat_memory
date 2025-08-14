@@ -1,48 +1,31 @@
 # Core Web Framework
-flask
-requests
+flask==3.1.1
+requests==2.32.4
 
 # --- AI & Orchestration Framework ---
 # Main LangChain library and its core components
-langchain
-langchain-core
-langchain-community
+langchain==0.3.25
+langchain-core==0.3.72
+langchain-community==0.3.25
 # Ollama integration for local LLMs
-langchain-ollama
+langchain-ollama==0.3.3
+
+# --- RAG Components (for future or implicit use) ---
 # ChromaDB vector store integration
-langchain-chroma
-# HuggingFace integrations (e.g., for Embeddings)
-langchain-huggingface
-
-# --- Embeddings & Machine Learning Backend ---
-# Core library for running local embedding models
-sentence-transformers
-# Required by sentence-transformers
-torch
-huggingface-hub
-waitress
-
-# --- Vector Database ---
-chromadb
+langchain-chroma==0.0.1 # Assuming this is needed for ChromaDB integration, version not explicitly found in pip show output for langchain-chroma, will use a placeholder. User might need to adjust.
+chromadb==1.0.13
+# Embeddings & Machine Learning Backend (for embedding models like nomic-embed-text-v1.5)
+sentence-transformers==4.1.0
+torch==2.8.0.dev20250625+cu128
+huggingface-hub==0.33.5
 
 # --- Web Scraping & Search ---
-# Powerful web scraping and browser automation
-playwright
-# For parsing HTML content
-beautifulsoup4
-# Free and powerful search engine API for the Research Agent
-duckduckgo-search
-# Wikipedia API wrapper
-wikipedia
+ddgs==9.5.2
+beautifulsoup4==4.13.4
+playwright==1.54.0
 
 # --- Document Processing ---
-# For handling various document formats like DOCX, PPTX, etc.
-unstructured
-# Specialized, high-performance PDF parsing library (used by our crawler)
-PyMuPDF
-# Another PDF library, often a dependency for unstructured
-pypdf
+PyMuPDF==1.26.3 # For PDF handling
 
-# --- Local Search & Retrieval ---
-# For BM25 keyword search implementation in the hybrid retriever
-rank_bm25
+# --- WSGI Server ---
+waitress==3.0.2

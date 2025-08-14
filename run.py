@@ -14,7 +14,7 @@ if __name__ == "__main__":
         except:
             local_ip = "127.0.0.1"
         if platform.system() == "Windows":
-            timeout_seconds = 1800
+            timeout_seconds = 10800
             logging.info("KAIZEN:檢測到 Windows 環境，將使用 Waitress 作為 WSGI 伺服器。")
             logging.info(f"KAIZEN: 連線閒置超時已設定為 {timeout_seconds} 秒。")
             print("\n伺服器已啟動！請在瀏覽器中打開以下任一地址：")
