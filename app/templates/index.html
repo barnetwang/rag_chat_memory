@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KAIZEN深度研究報告生成器</title>
+    <title>深度研究報告生成器</title>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
@@ -14,8 +14,8 @@
             --secondary-text: #a0a0a0;
             --surface-color: #212121;
             --border-color: #333;
-            --accent-color: #8257E5;
-            --accent-hover: #9466FF;
+            --accent-color: #0071e3;
+            --accent-hover: #0077ed;
             --danger-color: #e53935;
             --danger-hover: #c62828;
             --success-color: #4CAF50;
@@ -228,7 +228,7 @@
             <div class="left-panel">
                 <div class="panel-header">
                     <h2>對話視窗</h2>
-                    <button id="clear-chat-btn" class="apple-btn danger">
+                    <button id="clear-chat-btn" class="apple-btn secondary">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         <span style="margin-left: 8px;">清除對話</span>
                     </button>
@@ -395,7 +395,7 @@
         }
         async function deleteHistoryEntry(entryId, entryTitle) {
             if (confirm(`您確定要刪除「${entryTitle}」這份報告嗎？`)) {
-                try { await fetch(`/api/history/${entryId}`, { method: 'DELETE' }); loadHistoryList(); }
+                try { await fetch(`/api/history/${entryId}`, { method: 'DELETE' }); loadHistoryList(); } 
                 catch (error) { console.error(`刪除歷史紀錄 ${entryId} 失敗:`, error); alert("刪除失敗。"); }
             }
         }
@@ -575,7 +575,7 @@
                 const url = `/ask?question=${encodeURIComponent(question)}&task_id=${currentTaskId}&bypass_assessment=${bypassAssessment}`;
                 const eventSource = new EventSource(url);
 
-                eventSource.onmessage = function(event) {
+                eventSource.onmessage = function(event) { 
                     let eventData; try { eventData = JSON.parse(event.data); } catch (e) { return; }
 
                     switch(eventData.type) {
