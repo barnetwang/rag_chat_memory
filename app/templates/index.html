@@ -306,6 +306,8 @@
         // --- Global Vars ---
         let chatBox, chatInput, submitButton, modelSelector, modelStatus, clearChatBtn, webSearchToggle;
         let fullMarkdownResponse = '', currentTaskId = null, originalBroadQuestion = null;
+        let eventSource = null;
+        let isCancelledByUser = false;
 
         // --- Init ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -463,6 +465,7 @@
                     actionsDiv.appendChild(downloadButton);
                 }
                 currentTaskId = null;
+                eventSource = null;
             };
 
             const appendError = (message) => {
@@ -472,16 +475,20 @@
 
             try {
                 const url = `/api/write_report?task_id=${currentTaskId}`;
-
-                const eventSource = new EventSource(url);
+                eventSource = new EventSource(url);
 
                 eventSource.onmessage = function(event) {
                     let eventData;
                     try { 
                         eventData = JSON.parse(event.data); 
                     } catch (e) { 
-                        console.error("Failed to parse event data: ", event.data);
+                        console.debug("Received a non-JSON message, likely a comment/heartbeat.");
                         return; 
+                    }
+
+                    if (eventData.type === 'heartbeat') {
+                        console.debug("Heartbeat received during report writing.");
+                        return;
                     }
 
                     switch(eventData.type) {
@@ -507,6 +514,7 @@
 
                 eventSource.onerror = function(err) {
                     console.error("EventSource failed:", err);
+                    if (isCancelledByUser) return;
                     if (!fullMarkdownResponse) {
                          appendError("與伺服器的連線意外中斷。");
                     }
@@ -552,11 +560,13 @@
         async function executeBlueprintGeneration(question, botContentDiv, actionsDiv, bypassAssessment) {
             submitButton.disabled = true;
             currentTaskId = `task_${Date.now()}`;
+            isCancelledByUser = false;
             
             const cancelBtn = document.getElementById('cancel-task-btn');
             const progressContainer = document.getElementById('progress-container');
             
             cancelBtn.style.display = 'flex';
+            cancelBtn.disabled = false;
             cancelBtn.onclick = () => {
                 cancelBtn.disabled = true;
                 cancelTask(currentTaskId);
@@ -564,6 +574,12 @@
             progressContainer.style.display = 'block';
             updateProgress(1, bypassAssessment ? '正在處理...' : '正在評估問題...');
             
+            let animationFrameId = null;
+            const render = () => {
+                botContentDiv.innerHTML = marked.parse(fullMarkdownResponse);
+                animationFrameId = null;
+            };
+
             const appendError = (message) => {
                 botContentDiv.innerHTML = `<p style="color:var(--danger-color);">[錯誤]：${message}</p>`;
                 progressContainer.style.display = 'none';
@@ -573,10 +589,20 @@
 
             try {
                 const url = `/ask?question=${encodeURIComponent(question)}&task_id=${currentTaskId}&bypass_assessment=${bypassAssessment}`;
-                const eventSource = new EventSource(url);
+                eventSource = new EventSource(url);
 
                 eventSource.onmessage = function(event) { 
-                    let eventData; try { eventData = JSON.parse(event.data); } catch (e) { return; }
+                    let eventData; 
+                    try { eventData = JSON.parse(event.data); } 
+                    catch (e) { 
+                        console.debug("Received a non-JSON message, likely a comment/heartbeat.");
+                        return;
+                    }
+
+                    if (eventData.type === 'heartbeat') {
+                        console.debug("Heartbeat received, connection is active.");
+                        return;
+                    }
 
                     switch(eventData.type) {
                         case 'clarification':
@@ -596,7 +622,9 @@
                             break;
                         case 'content':
                             fullMarkdownResponse += eventData.content;
-                            botContentDiv.innerHTML = marked.parse(fullMarkdownResponse);
+                            if (!animationFrameId) {
+                                animationFrameId = requestAnimationFrame(render);
+                            }
                             break;
                         case 'error':
                             appendError(eventData.content);
@@ -614,6 +642,11 @@
                 };
 
                 eventSource.onerror = function(err) {
+                    if (isCancelledByUser) {
+                        console.log("Connection closed by user cancellation.");
+                        return;
+                    }
+                    console.error("EventSource failed:", err);
                     if (!botContentDiv.innerHTML) {
                         appendError("與伺服器的連線意外中斷。");
                     }
@@ -710,7 +743,34 @@
             setTimeout(() => { modelStatus.textContent = `當前: ${modelSelector.value.split(':')[0]}`; }, 4000);
         }
         function handleClearChat() { if (confirm('您確定要清除目前視窗中的對話嗎？')) { chatBox.innerHTML = `<div class="message bot-message"><div class="message-wrapper"><div class="content">你好！我是您的 KAIZEN 深度研究助理。</div><div class="message-actions"></div></div></div>`; } }
-        async function cancelTask(taskId) { if (!taskId) return; try { await fetch('/api/cancel_task', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task_id: taskId }) }); } catch (error) { console.error('取消任務時出錯:', error); } }
+        
+        async function cancelTask(taskId) { 
+            if (!taskId) return; 
+            isCancelledByUser = true;
+            if (eventSource) {
+                eventSource.close();
+            }
+            const cancelBtn = document.getElementById('cancel-task-btn');
+            const progressContainer = document.getElementById('progress-container');
+            const botMessages = document.querySelectorAll('.bot-message');
+            const lastBotMessage = botMessages[botMessages.length - 1];
+            if(lastBotMessage) {
+                const contentDiv = lastBotMessage.querySelector('.content');
+                if(contentDiv && !contentDiv.querySelector('.blueprint-container')) {
+                     contentDiv.innerHTML = `<p style="color:var(--info-color);">任務已由使用者取消。</p>`;
+                }
+            }
+            progressContainer.style.display = 'none';
+            cancelBtn.style.display = 'none';
+            submitButton.disabled = false;
+
+            try { 
+                await fetch('/api/cancel_task', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task_id: taskId }) }); 
+            } catch (error) { 
+                console.error('取消任務時出錯:', error); 
+            } 
+        }
+
         function handleEnter(event) { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); } }
         function escapeHtml(unsafe) { return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
         function toggleTheme() { document.body.classList.toggle('light-mode'); }
