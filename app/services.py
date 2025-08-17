@@ -458,6 +458,19 @@ class ConversationalRAG:
                     f"Client disconnected during task {task_id}")
 
         try:
+            # --- 心跳機制初始化 ---
+            last_heartbeat = time.time()
+            HEARTBEAT_INTERVAL = 15  # seconds
+
+            def yield_heartbeat_if_needed():
+                nonlocal last_heartbeat
+                if time.time() - last_heartbeat > HEARTBEAT_INTERVAL:
+                    # SSE 註解格式，客戶端 JS 會忽略它，但能保持 TCP 連接
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                    last_heartbeat = time.time()
+                    logging.debug(f"Sent heartbeat for task {task_id}")
+            # --- 心跳機制初始化結束 ---
+
             def check_cancellation():
                 if task_id and self.active_tasks.get(task_id, {}).get("is_cancelled"):
                     raise InterruptedError(
@@ -465,6 +478,7 @@ class ConversationalRAG:
 
             check_cancellation()
             yield from send_event(f"data: {json.dumps({'type': 'status', 'message': '步驟 1/3: 正在拆解研究任務...'})}\n\n")
+            yield from yield_heartbeat_if_needed() # <<-- 加入心跳檢查點
 
             task_decomp_template = self.prompts.get("task_decomposition")
             task_decomp_chain = task_decomp_template | self.llm | self.parsers[
@@ -483,9 +497,11 @@ class ConversationalRAG:
             strategist_chain = search_strategist_template | self.llm | self.parsers[
                 "search_strategist"]
 
+            # 主要的循環，最適合加入心跳
             for i, task in enumerate(sub_tasks):
                 check_cancellation()
-                yield from send_event(f"data: {json.dumps({'type': 'status', 'message': f'步驟 2.{i+1}/{len(sub_tasks)}: 正在綜合研究 \"{task[:20]}...\"'})}\n\n")
+                yield from yield_heartbeat_if_needed() # <<-- 每次循環開始時檢查
+                yield from send_event(f"data: {json.dumps({'type': 'status', 'message': f'步驟 2.{i+1}/{len(sub_tasks)}: 正在綜合研究 "{task[:20]}..."'})}\n\n")
 
                 search_strategy_obj = strategist_chain.invoke(
                     {"question": question, "task": task})
@@ -494,11 +510,15 @@ class ConversationalRAG:
                 logging.info(
                     f"   -> 策略師為 '{task}' 生成了 {len(search_queries)} 個搜尋向量: {search_queries}")
                 task_specific_docs = []
+                
+                # 內部循環，這裡的等待時間最長
                 for query in search_queries:
                     check_cancellation()
-                    docs_for_query = self._agent_based_web_search(query, task)
+                    yield from yield_heartbeat_if_needed() # <<-- 每次查詢前檢查
+                    docs_for_query = self._agent_based_web_search(query, task) # <== 長時間操作
                     if docs_for_query:
                         task_specific_docs.extend(docs_for_query)
+                
                 context = "注意：未能從網路找到相關資料。"
                 if task_specific_docs:
                     all_source_documents.extend(task_specific_docs)
@@ -513,7 +533,8 @@ class ConversationalRAG:
                         [f"來源：{doc.metadata.get('source', '網路')}\n內容:\n{doc.page_content}" for doc in unique_docs_for_synthesis])
                 else:
                     logging.warning(f"   -> 未能為子任務 '{task}' 找到任何網路資料。")
-
+                
+                yield from yield_heartbeat_if_needed() # <<-- LLM調用前檢查
                 detailed_memo = self.llm.invoke(
                     analyst_template.format(context=context, question=task))
 
@@ -524,6 +545,7 @@ class ConversationalRAG:
 
             check_cancellation()
             yield from send_event(f"data: {json.dumps({'type': 'status', 'message': '步驟 3/3: 正在生成報告大綱...'})}\n\n")
+            yield from yield_heartbeat_if_needed() # <<-- 最後一步前檢查
             blueprint_gen_template = self.prompts.get(
                 "answer_blueprint_generator")
             blueprint_chain = blueprint_gen_template | self.llm | self.parsers[
@@ -607,6 +629,18 @@ class ConversationalRAG:
             if not cached_data:
                 raise ValueError(f"無法在快取中找到任務 {task_id} 的藍圖資料。")
 
+            # --- 心跳機制初始化 ---
+            last_heartbeat = time.time()
+            HEARTBEAT_INTERVAL = 15 # seconds
+
+            def yield_heartbeat_if_needed():
+                nonlocal last_heartbeat
+                if time.time() - last_heartbeat > HEARTBEAT_INTERVAL:
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                    last_heartbeat = time.time()
+                    logging.debug(f"Sent heartbeat during report writing for task {task_id}")
+            # --- 心跳機制初始化結束 ---
+
             question = cached_data['question']
             context = cached_data['context']
             blueprint = cached_data['blueprint']
@@ -625,6 +659,7 @@ class ConversationalRAG:
 
             for chapter in blueprint.get('chapters', []):
                 check_cancellation()
+                yield from yield_heartbeat_if_needed() # <<-- 每個章節開始前檢查
 
                 chapter_title = chapter.get('title', '無標題章節')
                 # Yield chapter title as a header
@@ -642,6 +677,8 @@ class ConversationalRAG:
                     "key_points": formatted_key_points
                 }):
                     check_cancellation()
+                    # 重置心跳計時器，因為我們剛剛發送了真實數據
+                    last_heartbeat = time.time() 
                     full_report_text += chunk
                     yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
 
@@ -657,6 +694,7 @@ class ConversationalRAG:
                 yield f"data: {json.dumps({'type': 'content', 'content': reference_section_str})}\n\n"
 
             # --- Fact-Checking Stage ---
+            yield from yield_heartbeat_if_needed()
             yield from self._fact_check_report(full_report_text, context)
 
             yield f"data: {json.dumps({'type': 'status', 'message': '報告生成完畢！'})}\n\n"
